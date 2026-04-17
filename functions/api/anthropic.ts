@@ -1,11 +1,14 @@
 // Changes:
-// - Cloudflare Pages Function version of the Anthropic proxy. Uses raw fetch
-//   instead of the @anthropic-ai/sdk so it runs in the Workers runtime
-//   (which doesn't support every Node API the SDK uses). This also makes
-//   supporting LiteLLM-style custom BASE_URL + Bearer auth trivial.
-// - Request body from client: {imageBase64?, contextText, contextMode}.
-// - Env: either ANTHROPIC_API_KEY alone (official API), OR
-//   ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN (LiteLLM-style proxy).
+// - REWRITTEN to use Google Gemini instead of Anthropic Claude, because the
+//   company LiteLLM proxy is a bare-IP URL which Cloudflare Workers runtime
+//   blocks with "error 1003: Direct IP access not allowed". Gemini is reached
+//   via a proper HTTPS hostname (generativelanguage.googleapis.com) so it works
+//   fine on Cloudflare Pages.
+// - The endpoint path is kept as /api/anthropic so the existing front-end code
+//   (src/services/gemini.ts) doesn't need to change.
+// - Contract is unchanged: input {imageBase64?, contextText, contextMode},
+//   output a parsed JSON with title / about_section / description_html / ...
+// - Uses gemini-2.5-flash which is fast, cheap, and has a generous free tier.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 
 type Body = {
@@ -14,8 +17,9 @@ type Body = {
   contextMode?: 'series' | 'template';
 };
 
-const OFFICIAL_BASE_URL = 'https://api.anthropic.com';
-const MODEL = 'claude-sonnet-4-6';
+const MODEL = 'gemini-2.5-flash';
+const ENDPOINT = (key: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`;
 
 function buildPrompt(contextMode: 'series' | 'template', contextText: string) {
   return `You are an expert Shopify product copywriter and SEO specialist.
@@ -50,22 +54,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const denied = requireAuth(request, env);
   if (denied) return denied;
 
-  const baseURL = env.ANTHROPIC_BASE_URL?.replace(/\/+$/, '') || OFFICIAL_BASE_URL;
-  const authToken = env.ANTHROPIC_AUTH_TOKEN;
-  const apiKey = env.ANTHROPIC_API_KEY;
-
-  if (baseURL === OFFICIAL_BASE_URL && !apiKey) {
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) {
     return jsonResponse(
-      { error: 'Server misconfiguration: ANTHROPIC_API_KEY is not set.' },
-      500
-    );
-  }
-  if (baseURL !== OFFICIAL_BASE_URL && !(authToken || apiKey)) {
-    return jsonResponse(
-      {
-        error:
-          'Server misconfiguration: ANTHROPIC_BASE_URL is set but no ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY to authenticate with.',
-      },
+      { error: 'Server misconfiguration: GEMINI_API_KEY is not set.' },
       500
     );
   }
@@ -87,40 +79,29 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const prompt = buildPrompt(contextMode, contextText);
 
-  const content: any[] = [];
+  const parts: any[] = [];
   if (imageBase64) {
     const commaIdx = imageBase64.indexOf(',');
     const header = imageBase64.slice(0, commaIdx);
-    const base64Data = imageBase64.slice(commaIdx + 1);
+    const data = imageBase64.slice(commaIdx + 1);
     const mimeMatch = header.match(/data:([^;]+);base64/);
     const mimeType = mimeMatch?.[1] || 'image/png';
-    content.push({
-      type: 'image',
-      source: { type: 'base64', media_type: mimeType, data: base64Data },
-    });
+    parts.push({ inlineData: { mimeType, data } });
   }
-  content.push({ type: 'text', text: prompt });
-
-  // Pick auth mode. Custom base URL => Bearer; otherwise x-api-key.
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'anthropic-version': '2023-06-01',
-  };
-  if (baseURL === OFFICIAL_BASE_URL) {
-    headers['x-api-key'] = apiKey!;
-  } else {
-    headers['Authorization'] = `Bearer ${authToken || apiKey}`;
-  }
+  parts.push({ text: prompt });
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseURL}/v1/messages`, {
+    upstream = await fetch(ENDPOINT(apiKey), {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 4096,
-        messages: [{ role: 'user', content }],
+        contents: [{ parts }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
+        },
       }),
     });
   } catch (err: any) {
@@ -133,14 +114,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const rawText = await upstream.text();
   if (!upstream.ok) {
     return jsonResponse(
-      { error: `Anthropic upstream ${upstream.status}: ${rawText}` },
+      { error: `Gemini upstream ${upstream.status}: ${rawText.slice(0, 500)}` },
       502
     );
   }
 
-  let claudeJson: any;
+  let geminiJson: any;
   try {
-    claudeJson = JSON.parse(rawText);
+    geminiJson = JSON.parse(rawText);
   } catch {
     return jsonResponse(
       { error: 'Upstream returned non-JSON response.', raw: rawText.slice(0, 500) },
@@ -148,16 +129,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
-  // Find the text block in the response
-  const textBlock = Array.isArray(claudeJson?.content)
-    ? claudeJson.content.find((b: any) => b?.type === 'text')
-    : null;
-  const text: string | undefined = textBlock?.text;
-  if (!text) {
-    return jsonResponse({ error: 'No text content from model.' }, 502);
+  const textBlock: string | undefined = geminiJson?.candidates?.[0]?.content?.parts?.find(
+    (p: any) => typeof p?.text === 'string'
+  )?.text;
+  if (!textBlock) {
+    return jsonResponse(
+      { error: 'No text content from model.', raw: JSON.stringify(geminiJson).slice(0, 500) },
+      502
+    );
   }
 
-  const cleaned = text
+  const cleaned = textBlock
     .replace(/^```(?:json)?\n?/, '')
     .replace(/\n?```$/, '')
     .trim();
@@ -167,7 +149,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse(parsed);
   } catch {
     return jsonResponse(
-      { error: 'Model returned invalid JSON.', raw: cleaned },
+      { error: 'Model returned invalid JSON.', raw: cleaned.slice(0, 500) },
       502
     );
   }
