@@ -1,8 +1,8 @@
-// Changes: Routes all Gemini image models through shared upstream (company proxy or direct API).
+// Changes: Routes OpenAI image models through shared upstream (company proxy or direct API).
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 import {
   generateImageDataUrl,
-  SUPPORTED_IMAGE_MODELS,
+  OPENAI_IMAGE_MODELS,
 } from './_utils/imageGeneration';
 
 type Body = {
@@ -31,7 +31,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (typeof aspectRatio !== 'string') {
     return jsonResponse({ error: 'Missing aspectRatio.' }, 400);
   }
-  if (!model || !SUPPORTED_IMAGE_MODELS.has(model)) {
+  if (!model || !OPENAI_IMAGE_MODELS.has(model)) {
     return jsonResponse({ error: 'Invalid model.' }, 400);
   }
 

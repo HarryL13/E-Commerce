@@ -1,5 +1,4 @@
-// Changes:
-// - Cloudflare Pages Functions version of the auth helper. Returns either
+// Changes: Env bindings for unified LiteLLM proxy + direct API keys.
 //   null (if authenticated) or a Response to immediately return from the
 //   caller. Usage pattern:
 //     const denied = requireAuth(request, env);
@@ -11,10 +10,13 @@ export const PASSWORD_HEADER = 'x-app-password';
 
 export interface Env {
   APP_PASSWORD?: string;
+  API_BASE_URL?: string;
+  API_AUTH_TOKEN?: string;
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_BASE_URL?: string;
   ANTHROPIC_AUTH_TOKEN?: string;
   GEMINI_API_KEY?: string;
+  OPENAI_API_KEY?: string;
 }
 
 export function jsonResponse(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {

@@ -7,6 +7,7 @@
 // - Added Logo Brand tab: upload logo + product image(s), position & size controls,
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
+// - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
 import React, { useState, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -17,6 +18,12 @@ import { Button } from './components/Button';
 import { GeneratedImage, AspectRatio, ModelType, AppTab, LogoPosition } from './types';
 import { generateImageFromGemini, ensureApiKey, analyzeImage } from './services/geminiService';
 import { buildLogoPlacementPrompt, getLogoPositionLabel } from './utils/logoPlacement';
+import {
+  buildSceneBatchCustomPrompt,
+  buildSceneCustomPrompt,
+  buildSceneSmartPrompts,
+  getSceneSmartBatchTemplate,
+} from './utils/scenePrompts';
 import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box, Stamp } from 'lucide-react';
 
 // Helper to shuffle array for random selection
@@ -31,7 +38,7 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 
 const ImageStudioApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
-  const [model, setModel] = useState<ModelType>(ModelType.FLASH);
+  const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +151,7 @@ const ImageStudioApp: React.FC = () => {
 
       setIsGenerating(true);
       setError(null);
-      const targetModel = ModelType.FLASH;
+      const targetModel = model;
       let successCount = 0;
 
       try {
@@ -214,7 +221,7 @@ const ImageStudioApp: React.FC = () => {
     setProgressMessage("Starting Multi-View Generation...");
 
     try {
-      const targetModel = ModelType.FLASH;
+      const targetModel = model;
       const canProceed = await ensureApiKey(targetModel);
       if (!canProceed) {
           setIsGenerating(false);
@@ -287,7 +294,7 @@ const ImageStudioApp: React.FC = () => {
         { suffix: "Detailed zoom-in close-up.", label: "Zoom" }
      ];
 
-     const targetModel = ModelType.FLASH;
+     const targetModel = model;
 
      try {
         const canProceed = await ensureApiKey(targetModel);
@@ -369,7 +376,7 @@ const ImageStudioApp: React.FC = () => {
 
     setIsGenerating(true);
     setError(null);
-    const targetModel = ModelType.FLASH;
+    const targetModel = model;
     let successCount = 0;
 
     try {
@@ -432,17 +439,10 @@ const ImageStudioApp: React.FC = () => {
             setError("Please upload at least one file for batch processing.");
             return;
         }
-        const promptGen = () => "Place the object from this reference image into the following scene: " + prompt;
+        const promptGen = () => buildSceneBatchCustomPrompt(prompt);
         executeBatchRun(promptGen, "Custom", ratio);
     } else {
-        if (!sceneImage) {
-            // Optional: Allow generation without image
-        }
-        const prefix = sceneImage 
-          ? "Place the object from this reference image into the following scene: " 
-          : "Create a scene described as: ";
-        
-        handleGenerate(prefix + prompt, ratio, sceneImage);
+        handleGenerate(buildSceneCustomPrompt(prompt, !!sceneImage), ratio, sceneImage);
     }
   };
 
@@ -455,16 +455,7 @@ const ImageStudioApp: React.FC = () => {
              setError("Please upload files first.");
              return;
         }
-        let promptTemplate = "";
-        
-        if (type === 'scene') {
-            promptTemplate = "Professional product photography of this object placed on a polished white marble surface, modern minimal background, soft high-key lighting.";
-        } else if (type === 'ugc') {
-            promptTemplate = "A realistic lifestyle photo of this object on a wooden coffee table in a cozy living room, warm sunlight, authentic home vibe.";
-        } else {
-            promptTemplate = "Close-up shot of a hand holding this object, showing scale and interaction, blurred natural background.";
-        }
-
+        const promptTemplate = getSceneSmartBatchTemplate(type);
         const promptGen = () => promptTemplate;
         executeBatchRun(promptGen, type === 'scene' ? 'Pro Scene' : type === 'ugc' ? 'Lifestyle' : 'Interaction', '1:1');
         return;
@@ -482,56 +473,12 @@ const ImageStudioApp: React.FC = () => {
 
     try {
       const objectDescription = await analyzeImage(sceneImage);
-      
-      let prompts: string[] = [];
-
-      // --- SCENE LOGIC ---
-      if (type === 'scene') {
-        prompts = [
-          `High-end commercial photography of the ${objectDescription} placed on a polished white marble coffee table in a sunlit modern living room.`,
-          `Interior design style shot: The ${objectDescription} displayed on a wooden shelf, minimal home decor.`,
-          `Elegant product shot of the ${objectDescription} on a clean vanity table, morning light.`,
-          `The ${objectDescription} placed on a textured fabric surface in a cozy bedroom setting.`,
-          `A professional shot of the ${objectDescription} on a clean kitchen island countertop, modern white cabinetry.`
-        ];
-      } 
-      // --- LIFESTYLE (UGC) LOGIC ---
-      else if (type === 'ugc') {
-        const ugcPool = [
-           `A realistic POV photo of a hand holding the ${objectDescription} inside a cozy living room, warm ambient light.`,
-           `A casual lifestyle snap of the ${objectDescription} sitting on a bedside table next to a lamp and a book.`,
-           `The ${objectDescription} placed on a home office desk next to a laptop and a steaming coffee cup.`,
-           `A candid photo of the ${objectDescription} on a rustic wooden entryway console table.`,
-           `User-generated content style: The ${objectDescription} resting on a soft textured throw blanket on a sofa.`,
-           `A bright morning shot of the ${objectDescription} on a kitchen counter near a window.`,
-           `The ${objectDescription} placed on a window sill with raindrops on the glass, moody aesthetic.`,
-           `A summer vibe shot of the ${objectDescription} on an outdoor patio table with dappled sunlight.`,
-           `The ${objectDescription} sitting on a bathroom vanity shelf, clean and spa-like atmosphere.`,
-           `Top-down view of the ${objectDescription} on a picnic blanket in the grass.`
-        ];
-        // Raffle: Randomly select 5 unique scenes
-        prompts = shuffleArray(ugcPool).slice(0, 5);
-      } 
-      // --- INTERACTION LOGIC ---
-      else {
-        const interactionPool = [
-           `A realistic POV shot of a hand holding the ${objectDescription} inside a modern home living room, with a sofa and soft decor in the background.`,
-           `Close-up interaction: someone's hand resting on the ${objectDescription} on a desk in a quiet library, with rows of books in the background.`,
-           `A shot of the ${objectDescription} being held up in a modern shopping mall, with bright commercial lighting and glass storefronts.`,
-           `Street photography style: a hand holding the ${objectDescription} with a blurred city street and pavement in the background.`,
-           `A casual shot of the ${objectDescription} being used at a coffee shop table, with a warm, social atmosphere in the background.`,
-           `A hand holding the ${objectDescription} against a clear blue sky in a park, nature background.`,
-           `A professional setting: a hand holding the ${objectDescription} in a modern office, glass walls in background.`,
-           `A hand holding the ${objectDescription} inside a car, dashboard and steering wheel visible.`,
-           `A hand holding the ${objectDescription} in a study hall, quiet academic atmosphere with wooden desks.`,
-           `A hand holding the ${objectDescription} in a grocery store aisle, shelves in background.`
-        ];
-        // Raffle: Randomly select 5 unique scenes
-        prompts = shuffleArray(interactionPool).slice(0, 5);
-      }
+      const prompts = buildSceneSmartPrompts(type, true, objectDescription, (items, count) =>
+        shuffleArray(items).slice(0, count)
+      );
 
       let successCount = 0;
-      const targetModel = ModelType.FLASH;
+      const targetModel = model;
 
       for (let i = 0; i < prompts.length; i++) {
         setProgressMessage(`Generating ${type} variation ${i + 1} of ${prompts.length}...`);

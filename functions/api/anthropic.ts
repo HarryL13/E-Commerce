@@ -1,15 +1,6 @@
-// Changes:
-// - REWRITTEN to use Google Gemini instead of Anthropic Claude, because the
-//   company LiteLLM proxy is a bare-IP URL which Cloudflare Workers runtime
-//   blocks with "error 1003: Direct IP access not allowed". Gemini is reached
-//   via a proper HTTPS hostname (generativelanguage.googleapis.com) so it works
-//   fine on Cloudflare Pages.
-// - The endpoint path is kept as /api/anthropic so the existing front-end code
-//   (src/services/gemini.ts) doesn't need to change.
-// - Contract is unchanged: input {imageBase64?, contextText, contextMode},
-//   output a parsed JSON with title / about_section / description_html / ...
-// - Uses gemini-2.5-flash which is fast, cheap, and has a generous free tier.
+// Changes: SKU copy generation via company LiteLLM proxy (gemini-3-flash) or direct Gemini API.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
+import { resolveProxyConfig } from './_utils/upstream';
 
 type Body = {
   imageBase64?: string | null;
@@ -17,9 +8,8 @@ type Body = {
   contextMode?: 'series' | 'template';
 };
 
-const MODEL = 'gemini-2.5-flash';
-const ENDPOINT = (key: string) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`;
+const DIRECT_MODEL = 'gemini-2.5-flash';
+const PROXY_MODEL = 'gemini-3-flash';
 
 function buildPrompt(contextMode: 'series' | 'template', contextText: string) {
   return `You are an expert Shopify product copywriter and SEO specialist.
@@ -50,17 +40,17 @@ Generate product listing details as a JSON object with these exact fields:
 Do not include markdown code blocks. Return only the raw JSON object.`;
 }
 
+function parseModelJson(textBlock: string) {
+  const cleaned = textBlock
+    .replace(/^```(?:json)?\n?/, '')
+    .replace(/\n?```$/, '')
+    .trim();
+  return JSON.parse(cleaned);
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const denied = requireAuth(request, env);
   if (denied) return denied;
-
-  const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return jsonResponse(
-      { error: 'Server misconfiguration: GEMINI_API_KEY is not set.' },
-      500
-    );
-  }
 
   let body: Body;
   try {
@@ -78,78 +68,123 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const prompt = buildPrompt(contextMode, contextText);
+  const proxy = resolveProxyConfig(env);
 
-  const parts: any[] = [];
-  if (imageBase64) {
-    const commaIdx = imageBase64.indexOf(',');
-    const header = imageBase64.slice(0, commaIdx);
-    const data = imageBase64.slice(commaIdx + 1);
-    const mimeMatch = header.match(/data:([^;]+);base64/);
-    const mimeType = mimeMatch?.[1] || 'image/png';
-    parts.push({ inlineData: { mimeType, data } });
-  }
-  parts.push({ text: prompt });
-
-  let upstream: Response;
   try {
-    upstream = await fetch(ENDPOINT(apiKey), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-          responseMimeType: 'application/json',
+    if (proxy.useProxy) {
+      const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+      if (imageBase64) {
+        content.push({ type: 'image_url', image_url: { url: imageBase64 } });
+      }
+      content.push({ type: 'text', text: prompt });
+
+      const upstream = await fetch(`${proxy.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${proxy.token}`,
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({
+          model: PROXY_MODEL,
+          messages: [{ role: 'user', content }],
+          max_tokens: 4096,
+          temperature: 0.7,
+        }),
+      });
+
+      const rawText = await upstream.text();
+      if (!upstream.ok) {
+        return jsonResponse(
+          { error: `Proxy upstream ${upstream.status}: ${rawText.slice(0, 500)}` },
+          502
+        );
+      }
+
+      const json = JSON.parse(rawText);
+      const textBlock: string | undefined = json?.choices?.[0]?.message?.content;
+      if (!textBlock) {
+        return jsonResponse(
+          { error: 'No text content from model.', raw: rawText.slice(0, 500) },
+          502
+        );
+      }
+
+      try {
+        return jsonResponse(parseModelJson(textBlock));
+      } catch {
+        return jsonResponse(
+          { error: 'Model returned invalid JSON.', raw: textBlock.slice(0, 500) },
+          502
+        );
+      }
+    }
+
+    const apiKey = env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return jsonResponse(
+        { error: 'Server misconfiguration: GEMINI_API_KEY is not set.' },
+        500
+      );
+    }
+
+    const parts: any[] = [];
+    if (imageBase64) {
+      const commaIdx = imageBase64.indexOf(',');
+      const header = imageBase64.slice(0, commaIdx);
+      const data = imageBase64.slice(commaIdx + 1);
+      const mimeMatch = header.match(/data:([^;]+);base64/);
+      const mimeType = mimeMatch?.[1] || 'image/png';
+      parts.push({ inlineData: { mimeType, data } });
+    }
+    parts.push({ text: prompt });
+
+    const upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${DIRECT_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+            responseMimeType: 'application/json',
+          },
+        }),
+      }
+    );
+
+    const rawText = await upstream.text();
+    if (!upstream.ok) {
+      return jsonResponse(
+        { error: `Gemini upstream ${upstream.status}: ${rawText.slice(0, 500)}` },
+        502
+      );
+    }
+
+    const geminiJson = JSON.parse(rawText);
+    const textBlock: string | undefined = geminiJson?.candidates?.[0]?.content?.parts?.find(
+      (p: any) => typeof p?.text === 'string'
+    )?.text;
+
+    if (!textBlock) {
+      return jsonResponse(
+        { error: 'No text content from model.', raw: JSON.stringify(geminiJson).slice(0, 500) },
+        502
+      );
+    }
+
+    try {
+      return jsonResponse(parseModelJson(textBlock));
+    } catch {
+      return jsonResponse(
+        { error: 'Model returned invalid JSON.', raw: textBlock.slice(0, 500) },
+        502
+      );
+    }
   } catch (err: any) {
     return jsonResponse(
       { error: `Upstream fetch failed: ${err?.message || String(err)}` },
-      502
-    );
-  }
-
-  const rawText = await upstream.text();
-  if (!upstream.ok) {
-    return jsonResponse(
-      { error: `Gemini upstream ${upstream.status}: ${rawText.slice(0, 500)}` },
-      502
-    );
-  }
-
-  let geminiJson: any;
-  try {
-    geminiJson = JSON.parse(rawText);
-  } catch {
-    return jsonResponse(
-      { error: 'Upstream returned non-JSON response.', raw: rawText.slice(0, 500) },
-      502
-    );
-  }
-
-  const textBlock: string | undefined = geminiJson?.candidates?.[0]?.content?.parts?.find(
-    (p: any) => typeof p?.text === 'string'
-  )?.text;
-  if (!textBlock) {
-    return jsonResponse(
-      { error: 'No text content from model.', raw: JSON.stringify(geminiJson).slice(0, 500) },
-      502
-    );
-  }
-
-  const cleaned = textBlock
-    .replace(/^```(?:json)?\n?/, '')
-    .replace(/\n?```$/, '')
-    .trim();
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    return jsonResponse(parsed);
-  } catch {
-    return jsonResponse(
-      { error: 'Model returned invalid JSON.', raw: cleaned.slice(0, 500) },
       502
     );
   }

@@ -1,7 +1,7 @@
-// Changes: Professional light theme; unified with E-Commerce Studio shell.
+// Changes: Model selector includes gpt-image-1 (OpenAI) alongside Gemini models.
 import React from 'react';
-import { Image, Zap, Crown, Layers, Grid3X3, Palette, Stamp } from 'lucide-react';
-import { ModelType, AppTab } from '../types';
+import { Image, Zap, Crown, Bot, Layers, Grid3X3, Palette, Stamp } from 'lucide-react';
+import { ModelType, AppTab, IMAGE_MODEL_OPTIONS, getModelLabel } from '../types';
 
 interface HeaderProps {
   currentModel: ModelType;
@@ -9,6 +9,12 @@ interface HeaderProps {
   activeTab: AppTab;
   onTabChange: (tab: AppTab) => void;
 }
+
+const MODEL_ICONS: Record<ModelType, typeof Zap> = {
+  [ModelType.GEMINI_31_FLASH_IMAGE]: Zap,
+  [ModelType.GEMINI_3_PRO_IMAGE_PREVIEW]: Crown,
+  [ModelType.GPT_IMAGE_2]: Bot,
+};
 
 export const Header: React.FC<HeaderProps> = ({
   currentModel,
@@ -50,25 +56,32 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
 
-        <div className="studio-tab-group shrink-0">
-          <button
-            onClick={() => onModelChange(ModelType.FLASH)}
-            className={`studio-tab flex items-center gap-1.5 ${
-              currentModel === ModelType.FLASH ? 'studio-tab-active text-indigo-700' : ''
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Flash</span>
-          </button>
-          <button
-            onClick={() => onModelChange(ModelType.PRO)}
-            className={`studio-tab flex items-center gap-1.5 ${
-              currentModel === ModelType.PRO ? 'studio-tab-active text-purple-700' : ''
-            }`}
-          >
-            <Crown className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Pro</span>
-          </button>
+        <div className="studio-tab-group shrink-0 max-w-[min(100%,280px)] overflow-x-auto no-scrollbar">
+          {IMAGE_MODEL_OPTIONS.map((modelId) => {
+            const Icon = MODEL_ICONS[modelId];
+            const isActive = currentModel === modelId;
+            return (
+              <button
+                key={modelId}
+                onClick={() => onModelChange(modelId)}
+                title={getModelLabel(modelId)}
+                className={`studio-tab flex items-center gap-1.5 max-w-full ${
+                  isActive
+                    ? modelId === ModelType.GEMINI_31_FLASH_IMAGE
+                      ? 'studio-tab-active text-indigo-700'
+                      : modelId === ModelType.GPT_IMAGE_2
+                        ? 'studio-tab-active text-emerald-700'
+                        : 'studio-tab-active text-purple-700'
+                    : ''
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-mono text-[10px] sm:text-[11px] truncate">
+                  {getModelLabel(modelId)}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </header>

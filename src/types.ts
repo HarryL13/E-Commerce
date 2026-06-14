@@ -1,8 +1,23 @@
+// Changes: Model IDs aligned with company LiteLLM proxy; added gpt-image-2.
 export type AspectRatio = "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
 
 export enum ModelType {
-  FLASH = 'gemini-2.5-flash-image',
-  PRO = 'gemini-3-pro-image-preview'
+  GEMINI_31_FLASH_IMAGE = 'gemini-3.1-flash-image-preview',
+  GEMINI_3_PRO_IMAGE_PREVIEW = 'gemini-3-pro-image-preview',
+  GPT_IMAGE_2 = 'gpt-image-2',
+}
+
+/** Legacy model IDs still accepted by the generate API. */
+export const LEGACY_IMAGE_MODELS = ['gemini-2.5-flash-image'] as const;
+
+export const IMAGE_MODEL_OPTIONS: ModelType[] = [
+  ModelType.GEMINI_31_FLASH_IMAGE,
+  ModelType.GEMINI_3_PRO_IMAGE_PREVIEW,
+  ModelType.GPT_IMAGE_2,
+];
+
+export function getModelLabel(model: ModelType | string): string {
+  return model;
 }
 
 export enum AppTab {
@@ -25,7 +40,7 @@ export interface GeneratedImage {
   prompt: string;
   timestamp: number;
   aspectRatio: AspectRatio;
-  model: ModelType;
+  model: ModelType | string;
   tab?: AppTab;
 }
 
