@@ -1,6 +1,6 @@
-/* Changes: Professional light studio design system for SKU Generator + Image Studio. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Changes: Professional light studio design system; studio-select for header dropdowns. */
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -68,6 +68,10 @@
 
   .input-modern {
     @apply w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 text-sm text-zinc-900 transition-all focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 placeholder:text-zinc-400;
+  }
+
+  .studio-select {
+    @apply bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-800 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 cursor-pointer min-w-[7.5rem] max-w-full;
   }
 
   .label-modern {

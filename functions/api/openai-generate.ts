@@ -9,6 +9,7 @@ type Body = {
   prompt?: string;
   aspectRatio?: string;
   model?: string;
+  imageSize?: string;
   referenceImage?: string;
   referenceImages?: string[];
 };
@@ -24,7 +25,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: 'Invalid JSON body.' }, 400);
   }
 
-  const { prompt, aspectRatio, model, referenceImage, referenceImages } = body;
+  const { prompt, aspectRatio, model, imageSize, referenceImage, referenceImages } = body;
   if (typeof prompt !== 'string' || prompt.length === 0) {
     return jsonResponse({ error: 'Missing prompt.' }, 400);
   }
@@ -40,6 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       prompt,
       aspectRatio,
       model,
+      imageSize,
       referenceImage,
       referenceImages,
     });

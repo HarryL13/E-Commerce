@@ -1,5 +1,10 @@
-// Changes: Model IDs aligned with company LiteLLM proxy; added gpt-image-2.
+// Changes: Added gpt-image-2 (OpenAI) alongside Gemini image models.
 export type AspectRatio = "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
+
+/** Gemini image output resolution (uppercase K required by API). */
+export type ImageResolution = '1K' | '2K' | '4K';
+
+export const IMAGE_RESOLUTION_OPTIONS: ImageResolution[] = ['1K', '2K', '4K'];
 
 export enum ModelType {
   GEMINI_31_FLASH_IMAGE = 'gemini-3.1-flash-image-preview',
@@ -41,6 +46,7 @@ export interface GeneratedImage {
   timestamp: number;
   aspectRatio: AspectRatio;
   model: ModelType | string;
+  imageResolution?: ImageResolution;
   tab?: AppTab;
 }
 

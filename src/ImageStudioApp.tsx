@@ -8,6 +8,7 @@
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
+// - Header resolution selector (1K / 2K / 4K) passed through image generation API.
 import React, { useState, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -15,8 +16,9 @@ import { ImageGrid } from './components/ImageGrid';
 import { UploadZone } from './components/UploadZone';
 import { MultiUploadZone } from './components/MultiUploadZone';
 import { Button } from './components/Button';
-import { GeneratedImage, AspectRatio, ModelType, AppTab, LogoPosition } from './types';
+import { GeneratedImage, AspectRatio, ImageResolution, ModelType, AppTab, LogoPosition } from './types';
 import { generateImageFromGemini, ensureApiKey, analyzeImage } from './services/geminiService';
+import { normalizeImageResolution } from './utils/imageModels';
 import { buildLogoPlacementPrompt, getLogoPositionLabel } from './utils/logoPlacement';
 import {
   buildSceneBatchCustomPrompt,
@@ -39,6 +41,7 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 const ImageStudioApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
   const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
+  const [imageResolution, setImageResolution] = useState<ImageResolution>('4K');
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +84,11 @@ const ImageStudioApp: React.FC = () => {
   const [logoPrompt, setLogoPrompt] = useState('');
   const [logoAspectRatio, setLogoAspectRatio] = useState<AspectRatio>('1:1');
 
+  const handleModelChange = (nextModel: ModelType) => {
+    setModel(nextModel);
+    setImageResolution((prev) => normalizeImageResolution(nextModel, prev));
+  };
+
   const handleGenerate = useCallback(async (
     prompt: string, 
     aspectRatio: AspectRatio, 
@@ -106,7 +114,9 @@ const ImageStudioApp: React.FC = () => {
         prompt, 
         aspectRatio, 
         targetModel, 
-        referenceImg || undefined
+        referenceImg || undefined,
+        undefined,
+        imageResolution
       );
 
       const newImage: GeneratedImage = {
@@ -116,6 +126,7 @@ const ImageStudioApp: React.FC = () => {
         timestamp: Date.now(),
         aspectRatio,
         model: targetModel,
+        imageResolution,
         tab: activeTab
       };
 
@@ -128,7 +139,7 @@ const ImageStudioApp: React.FC = () => {
       setIsGenerating(false);
       setProgressMessage(null);
     }
-  }, [model, activeTab]);
+  }, [model, imageResolution, activeTab]);
 
   const handleDelete = useCallback((id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
@@ -175,7 +186,9 @@ const ImageStudioApp: React.FC = () => {
                     fullPrompt,
                     '1:1',
                     targetModel,
-                    preview 
+                    preview,
+                    undefined,
+                    imageResolution
                 );
 
                 const newImage: GeneratedImage = {
@@ -244,7 +257,9 @@ const ImageStudioApp: React.FC = () => {
             fullPrompt, 
             ratio, 
             targetModel, 
-            multiViewImage || undefined
+            multiViewImage || undefined,
+            undefined,
+            imageResolution
           );
 
           const newImage: GeneratedImage = {
@@ -334,7 +349,9 @@ const ImageStudioApp: React.FC = () => {
                         fullPrompt, 
                         ratio, 
                         targetModel, 
-                        preview
+                        preview,
+                        undefined,
+                        imageResolution
                     );
 
                     const newImage: GeneratedImage = {
@@ -400,7 +417,9 @@ const ImageStudioApp: React.FC = () => {
                     prompt,
                     aspectRatio,
                     targetModel,
-                    preview 
+                    preview,
+                    undefined,
+                    imageResolution
                 );
 
                 const newImage: GeneratedImage = {
@@ -485,7 +504,9 @@ const ImageStudioApp: React.FC = () => {
         if (i > 0) await new Promise(r => setTimeout(r, 1500)); 
 
         try {
-            const base64Image = await generateImageFromGemini(prompts[i], '1:1', targetModel, sceneImage);
+            const base64Image = await generateImageFromGemini(
+              prompts[i], '1:1', targetModel, sceneImage, undefined, imageResolution
+            );
             const newImage: GeneratedImage = {
                 id: crypto.randomUUID(),
                 url: base64Image,
@@ -645,7 +666,8 @@ const ImageStudioApp: React.FC = () => {
       logoAspectRatio,
       model,
       undefined,
-      [productPreview, logoImage!]
+      [productPreview, logoImage!],
+      imageResolution
     );
 
     const newImage: GeneratedImage = {
@@ -1491,7 +1513,9 @@ const ImageStudioApp: React.FC = () => {
       {/* Header with Tabs */}
       <Header
         currentModel={model}
-        onModelChange={setModel}
+        onModelChange={handleModelChange}
+        currentResolution={imageResolution}
+        onResolutionChange={setImageResolution}
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />

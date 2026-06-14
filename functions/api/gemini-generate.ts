@@ -1,4 +1,4 @@
-// Changes: Routes all Gemini image models through shared upstream (company proxy or direct API).
+// Changes: Accept optional imageSize (1K / 2K / 4K) for output resolution.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 import {
   generateImageDataUrl,
@@ -9,6 +9,7 @@ type Body = {
   prompt?: string;
   aspectRatio?: string;
   model?: string;
+  imageSize?: string;
   referenceImage?: string;
   referenceImages?: string[];
 };
@@ -24,7 +25,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: 'Invalid JSON body.' }, 400);
   }
 
-  const { prompt, aspectRatio, model, referenceImage, referenceImages } = body;
+  const { prompt, aspectRatio, model, imageSize, referenceImage, referenceImages } = body;
   if (typeof prompt !== 'string' || prompt.length === 0) {
     return jsonResponse({ error: 'Missing prompt.' }, 400);
   }
@@ -40,6 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       prompt,
       aspectRatio,
       model,
+      imageSize,
       referenceImage,
       referenceImages,
     });

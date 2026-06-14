@@ -1,4 +1,4 @@
-// Changes: Shared image generation — company LiteLLM proxy or direct Gemini/OpenAI APIs.
+// Changes: Image resolution selector — passes imageSize to shared upstream.
 import { Env } from './auth';
 import { resolveProxyConfig } from './upstream';
 
@@ -20,9 +20,17 @@ export type ImageGenRequest = {
   prompt: string;
   aspectRatio: string;
   model: string;
+  imageSize?: string;
   referenceImage?: string;
   referenceImages?: string[];
 };
+
+const VALID_IMAGE_SIZES = new Set(['1K', '2K', '4K']);
+
+export function normalizeImageSize(imageSize?: string): string {
+  if (imageSize && VALID_IMAGE_SIZES.has(imageSize)) return imageSize;
+  return '4K';
+}
 
 function mapAspectRatioToOpenAiSize(aspectRatio: string): string {
   switch (aspectRatio) {
@@ -92,6 +100,7 @@ async function generateViaProxyImagesApi(
   body: ImageGenRequest
 ): Promise<string> {
   const size = mapAspectRatioToOpenAiSize(body.aspectRatio);
+  const imageSize = normalizeImageSize(body.imageSize);
   const payload: Record<string, unknown> = {
     model: body.model,
     prompt: body.prompt,
@@ -103,7 +112,7 @@ async function generateViaProxyImagesApi(
   if (GEMINI_IMAGE_MODELS.has(body.model)) {
     payload.extra_body = {
       image_config: {
-        image_size: '4K',
+        image_size: imageSize,
         aspect_ratio: body.aspectRatio,
       },
     };
@@ -146,6 +155,8 @@ async function generateViaProxyGeminiNative(
   }
   parts.push({ text: body.prompt });
 
+  const imageSize = normalizeImageSize(body.imageSize);
+
   const upstream = await fetch(
     `${baseUrl}/v1beta/models/${body.model}:generateContent`,
     {
@@ -160,7 +171,7 @@ async function generateViaProxyGeminiNative(
           responseModalities: ['TEXT', 'IMAGE'],
           imageConfig: {
             aspectRatio: body.aspectRatio,
-            imageSize: '4K',
+            imageSize,
           },
         },
       }),
@@ -192,9 +203,10 @@ async function generateViaGeminiNative(
   }
   parts.push({ text: body.prompt });
 
+  const imageSize = normalizeImageSize(body.imageSize);
   const imageConfig: Record<string, string> = {
     aspectRatio: body.aspectRatio,
-    imageSize: '4K',
+    imageSize,
   };
 
   const upstream = await fetch(
