@@ -1,3 +1,4 @@
+// Changes: Unified dark studio theme upload zone (matches Image Studio upload styling).
 import React, { useCallback, useRef } from 'react';
 import { UploadCloud, X } from 'lucide-react';
 
@@ -20,13 +21,13 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImagesSelected, imag
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       onImagesSelected(Array.from(e.target.files));
-      e.target.value = ''; // clear input so the same file can be selected again
+      e.target.value = '';
     }
   }, [onImagesSelected]);
 
   return (
     <div
-      className="group relative border-2 border-dashed border-zinc-200 rounded-2xl p-6 flex flex-col items-center justify-center hover:border-zinc-900 hover:bg-zinc-50/50 transition-all duration-200 min-h-[16rem] overflow-hidden"
+      className="group relative border-2 border-dashed border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center hover:border-indigo-500/50 hover:bg-slate-900/40 transition-all duration-200 min-h-[16rem] overflow-hidden bg-slate-950/30"
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
       onClick={() => {
@@ -47,7 +48,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImagesSelected, imag
         <div className="w-full h-full p-2 flex flex-wrap gap-4 justify-center items-center overflow-y-auto">
           {imagePreviews.map((preview, index) => (
             <div key={index} className="relative group/item">
-              <img src={preview} alt={`Preview ${index}`} className="w-24 h-24 object-cover rounded-xl shadow-sm" />
+              <img src={preview} alt={`Preview ${index}`} className="w-24 h-24 object-cover rounded-xl border border-slate-700 shadow-sm" />
               {onRemoveImage && (
                 <button
                   onClick={(e) => {
@@ -63,13 +64,13 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImagesSelected, imag
             </div>
           ))}
           {imagePreviews.length < 6 && (
-            <button 
+            <button
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 fileInputRef.current?.click();
               }}
-              className="w-24 h-24 border-2 border-dashed border-zinc-300 rounded-xl flex flex-col items-center justify-center text-zinc-400 hover:text-zinc-600 hover:border-zinc-400 transition-colors cursor-pointer"
+              className="w-24 h-24 border-2 border-dashed border-slate-700 rounded-xl flex flex-col items-center justify-center text-slate-500 hover:text-indigo-400 hover:border-indigo-500/50 transition-colors cursor-pointer"
             >
               <UploadCloud className="w-6 h-6 mb-1" />
               <span className="text-[10px] font-medium">Add More</span>
@@ -78,11 +79,11 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImagesSelected, imag
         </div>
       ) : (
         <div className="text-center flex flex-col items-center cursor-pointer">
-          <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-            <UploadCloud className="h-8 w-8 text-zinc-400 group-hover:text-zinc-900 transition-colors" />
+          <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 border border-slate-700">
+            <UploadCloud className="h-8 w-8 text-slate-500 group-hover:text-indigo-400 transition-colors" />
           </div>
-          <p className="text-sm font-medium text-zinc-900 mb-1">Click to upload or drag and drop</p>
-          <p className="text-xs text-zinc-500">Upload up to 6 images</p>
+          <p className="text-sm font-medium text-slate-200 mb-1">Click to upload or drag and drop</p>
+          <p className="text-xs text-slate-500">Upload up to 6 images</p>
         </div>
       )}
     </div>

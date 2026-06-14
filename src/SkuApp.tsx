@@ -1,9 +1,6 @@
 // Changes:
-// - Removed the browser-side ANTHROPIC_API_KEY check and stopped passing the
-//   key to generateProductDetails. The key now lives only on the server
-//   (Vercel serverless function), so the frontend no longer needs or has
-//   access to it. Calls to generateProductDetails were updated to match the
-//   new signature (imageBase64, contextText, contextMode).
+// - Removed browser-side API key usage; calls go through server proxy.
+// - Unified UI with Image Studio: dark studio theme, sub-header below app shell.
 import React, { useState, useEffect } from 'react';
 import { Download, Wand2, AlertCircle, Save, History, Plus, CheckCircle2, PackageSearch, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -264,49 +261,40 @@ export default function SkuApp() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans selection:bg-zinc-900 selection:text-white pb-20">
-      <header className="bg-white/80 backdrop-blur-md border-b border-zinc-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-zinc-900 rounded-xl flex items-center justify-center shadow-sm">
-                <Wand2 className="w-4 h-4 text-white" />
-              </div>
-              <h1 className="text-lg font-semibold tracking-tight">SKU Generator</h1>
-            </div>
-            
-            <nav className="flex space-x-1 bg-zinc-100/50 p-1 rounded-full border border-zinc-200/50">
-              <button
-                onClick={() => setView('generator')}
-                className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${view === 'generator' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
-              >
-                Generator
-              </button>
-              <button
-                onClick={() => setView('history')}
-                className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center ${view === 'history' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
-              >
-                <History className="w-4 h-4 mr-1.5" />
-                History
-                {history.length > 0 && (
-                  <span className="ml-1.5 bg-zinc-900 text-white text-[10px] px-1.5 py-0.5 rounded-full leading-none">
-                    {history.length}
-                  </span>
-                )}
-              </button>
-            </nav>
-          </div>
-          
-          <div className="flex items-center space-x-3">
+    <div className="studio-root pb-20">
+      <div className="studio-subheader">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          <nav className="studio-tab-group">
+            <button
+              onClick={() => setView('generator')}
+              className={`studio-tab ${view === 'generator' ? 'studio-tab-active' : ''}`}
+            >
+              Generator
+            </button>
+            <button
+              onClick={() => setView('history')}
+              className={`studio-tab flex items-center gap-1.5 ${view === 'history' ? 'studio-tab-active' : ''}`}
+            >
+              <History className="w-3.5 h-3.5" />
+              History
+              {history.length > 0 && (
+                <span className="bg-indigo-500/20 text-indigo-300 text-[10px] px-1.5 py-0.5 rounded-full leading-none border border-indigo-500/30">
+                  {history.length}
+                </span>
+              )}
+            </button>
+          </nav>
+
+          <div className="flex items-center gap-2 shrink-0">
             {view === 'generator' ? (
               <>
                 <button onClick={saveToHistory} disabled={!productData.title} className="btn-secondary">
                   <Save className="w-4 h-4 mr-2" />
-                  Save Draft
+                  <span className="hidden sm:inline">Save Draft</span>
                 </button>
                 <button onClick={handleExportSingle} disabled={!productData.title} className="btn-primary">
                   <Download className="w-4 h-4 mr-2" />
-                  Export CSV
+                  <span className="hidden sm:inline">Export CSV</span>
                 </button>
               </>
             ) : (
@@ -317,19 +305,19 @@ export default function SkuApp() {
             )}
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-8">
         <AnimatePresence mode="wait">
           {error && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-6 bg-red-50 border border-red-100 p-4 rounded-2xl flex items-start shadow-sm"
+              className="mb-6 bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-start"
             >
-              <AlertCircle className="w-5 h-5 text-red-500 mr-3 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700 font-medium">{error}</p>
+              <AlertCircle className="w-5 h-5 text-red-400 mr-3 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-200 font-medium">{error}</p>
             </motion.div>
           )}
           {successMsg && (
@@ -337,10 +325,10 @@ export default function SkuApp() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-6 bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-start shadow-sm"
+              className="mb-6 bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl flex items-start"
             >
-              <CheckCircle2 className="w-5 h-5 text-emerald-500 mr-3 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-emerald-700 font-medium">{successMsg}</p>
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 mr-3 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-emerald-200 font-medium">{successMsg}</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -358,8 +346,8 @@ export default function SkuApp() {
               {/* Left Column: Inputs */}
               <div className="lg:col-span-4 space-y-6">
                 <div className="card-modern">
-                  <h2 className="text-base font-semibold mb-4 flex items-center justify-center">
-                    <span className="w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center text-xs mr-2">1</span>
+                  <h2 className="text-base font-semibold mb-4 flex items-center justify-center text-slate-200">
+                    <span className="studio-step">1</span>
                     Product Image(s)
                   </h2>
                   <ImageUpload 
@@ -367,7 +355,7 @@ export default function SkuApp() {
                     imagePreviews={imagePreviews} 
                     onRemoveImage={handleRemoveImage}
                   />
-                  <div className="mt-6 pt-6 border-t border-zinc-100">
+                  <div className="mt-6 pt-6 border-t border-slate-800">
                     <label className="label-modern text-center block mb-2">Default Price ($)</label>
                     <input
                       type="number"
@@ -381,20 +369,20 @@ export default function SkuApp() {
 
                 <div className="card-modern space-y-5">
                   <div className="flex flex-col items-center justify-center mb-4 space-y-3">
-                    <h2 className="text-base font-semibold flex items-center">
-                      <span className="w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center text-xs mr-2">2</span>
+                    <h2 className="text-base font-semibold flex items-center text-slate-200">
+                      <span className="studio-step">2</span>
                       Context
                     </h2>
-                    <div className="flex bg-zinc-100 p-1 rounded-lg">
+                    <div className="flex studio-tab-group p-1">
                       <button
                         onClick={() => setContextMode('series')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${contextMode === 'series' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}
+                        className={`studio-tab ${contextMode === 'series' ? 'studio-tab-active' : ''}`}
                       >
                         Series
                       </button>
                       <button
                         onClick={() => setContextMode('template')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${contextMode === 'template' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}
+                        className={`studio-tab ${contextMode === 'template' ? 'studio-tab-active' : ''}`}
                       >
                         Template
                       </button>
@@ -417,7 +405,7 @@ export default function SkuApp() {
                   <button
                     onClick={handleGenerate}
                     disabled={loading || (imageFiles.length === 0 && !contextText)}
-                    className="w-full flex justify-center items-center px-5 py-3 rounded-xl text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-sm"
+                    className="w-full flex justify-center items-center px-5 py-3 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-lg shadow-indigo-500/20"
                   >
                     {loading ? (
                       <>
@@ -440,8 +428,8 @@ export default function SkuApp() {
               {/* Right Column: Output & Editing */}
               <div className="lg:col-span-8 space-y-6">
                 <div className="card-modern">
-                  <h2 className="text-base font-semibold mb-6 flex items-center">
-                    <span className="w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center text-xs mr-2">3</span>
+                  <h2 className="text-base font-semibold mb-6 flex items-center text-slate-200">
+                    <span className="studio-step">3</span>
                     Listing Details
                   </h2>
                   
@@ -499,10 +487,10 @@ export default function SkuApp() {
                     <textarea
                       value={aboutSection}
                       onChange={e => setAboutSection(e.target.value)}
-                      className="input-modern resize-none bg-zinc-100/50 text-zinc-600"
+                      className="input-modern resize-none bg-slate-900/40 text-slate-400"
                       rows={4}
                     />
-                    <p className="text-[11px] text-zinc-500 mt-2 ml-1">This text is already integrated into the HTML description above.</p>
+                    <p className="text-[11px] text-slate-500 mt-2 ml-1">This text is already integrated into the HTML description above.</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -539,14 +527,14 @@ export default function SkuApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="card-modern p-0 overflow-hidden"
+              className="studio-card p-0 overflow-hidden"
             >
-              <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-                <h2 className="text-base font-semibold text-zinc-900">Generated Products History</h2>
+              <div className="px-6 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/80">
+                <h2 className="text-base font-semibold text-slate-200">Generated Products History</h2>
                 {history.length > 0 && (
                   <button
                     onClick={clearHistory}
-                    className="text-xs font-medium text-red-600 hover:text-red-700 px-3 py-1.5 rounded-full hover:bg-red-50 transition-colors"
+                    className="text-xs font-medium text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
                   >
                     Clear History
                   </button>
@@ -554,11 +542,11 @@ export default function SkuApp() {
               </div>
               
               {history.length === 0 ? (
-                <div className="p-16 text-center text-zinc-500">
-                  <div className="w-16 h-16 bg-zinc-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <PackageSearch className="w-8 h-8 text-zinc-300" />
+                <div className="p-16 text-center text-slate-500">
+                  <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <PackageSearch className="w-8 h-8 text-slate-600" />
                   </div>
-                  <p className="font-medium text-zinc-900 mb-1">No products saved yet</p>
+                  <p className="font-medium text-slate-200 mb-1">No products saved yet</p>
                   <p className="text-sm mb-6">Generate and save products to see them here.</p>
                   <button 
                     onClick={() => setView('generator')}
@@ -568,25 +556,25 @@ export default function SkuApp() {
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-zinc-100">
+                <div className="divide-y divide-slate-800">
                   {history.map((item, idx) => (
-                    <div key={idx} className="p-6 hover:bg-zinc-50/80 transition-colors flex items-start space-x-5 group">
+                    <div key={idx} className="p-6 hover:bg-slate-800/30 transition-colors flex items-start space-x-5 group">
                       {item.product.mainImageSrc ? (
-                        <img src={item.product.mainImageSrc} alt="" className="w-24 h-24 object-cover rounded-2xl border border-zinc-200 shadow-sm" />
+                        <img src={item.product.mainImageSrc} alt="" className="w-24 h-24 object-cover rounded-2xl border border-slate-700 shadow-sm" />
                       ) : (
-                        <div className="w-24 h-24 bg-zinc-100 rounded-2xl border border-zinc-200 flex items-center justify-center text-zinc-400 text-xs font-medium">
+                        <div className="w-24 h-24 bg-slate-800 rounded-2xl border border-slate-700 flex items-center justify-center text-slate-500 text-xs font-medium">
                           No Img
                         </div>
                       )}
                       <div className="flex-1 min-w-0 py-1">
-                        <h3 className="text-base font-semibold text-zinc-900 truncate mb-1">{item.product.title || 'Untitled Product'}</h3>
-                        <p className="text-xs text-zinc-500 mb-3 font-mono truncate">{item.product.handle || 'no-handle'}</p>
+                        <h3 className="text-base font-semibold text-slate-100 truncate mb-1">{item.product.title || 'Untitled Product'}</h3>
+                        <p className="text-xs text-slate-500 mb-3 font-mono truncate">{item.product.handle || 'no-handle'}</p>
                         <div className="flex flex-wrap gap-2">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-700 uppercase tracking-wider">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300 uppercase tracking-wider border border-slate-700">
                             {item.variants.length} Variants
                           </span>
                           {item.product.type && (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 uppercase tracking-wider">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 uppercase tracking-wider border border-indigo-500/20">
                               {item.product.type}
                             </span>
                           )}
@@ -605,7 +593,7 @@ export default function SkuApp() {
                         </button>
                         <button
                           onClick={() => deleteHistoryItem(idx)}
-                          className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                          className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
                           title="Delete item"
                         >
                           <Trash2 className="w-4 h-4" />

@@ -6,6 +6,8 @@
 // - `ensureApiKey` was tied to the old in-browser AI Studio "select key"
 //   flow; it's no longer needed because the server holds the key. Kept as
 //   a no-op stub so existing call sites don't have to change.
+// - `generateImageFromGemini` supports optional `referenceImages` array for
+//   multi-image requests (e.g. product + logo compositing).
 import { AspectRatio, ModelType } from '../types';
 import { apiFetch } from './authClient';
 
@@ -30,14 +32,22 @@ export const generateImageFromGemini = async (
   prompt: string,
   aspectRatio: AspectRatio,
   model: ModelType,
-  referenceImage?: string
+  referenceImage?: string,
+  referenceImages?: string[]
 ): Promise<string> => {
-  const data = await apiFetch<{ image: string }>('/api/gemini-generate', {
+  const payload: Record<string, unknown> = {
     prompt,
     aspectRatio,
     model,
-    referenceImage,
-  });
+  };
+
+  if (referenceImages && referenceImages.length > 0) {
+    payload.referenceImages = referenceImages;
+  } else if (referenceImage) {
+    payload.referenceImage = referenceImage;
+  }
+
+  const data = await apiFetch<{ image: string }>('/api/gemini-generate', payload);
   if (!data.image) throw new Error('No image returned from server.');
   return data.image;
 };

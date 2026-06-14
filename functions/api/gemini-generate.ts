@@ -2,8 +2,10 @@
 // - Cloudflare Pages Function version of the Gemini image-generation proxy.
 //   Uses raw fetch against the Google Generative Language REST API instead
 //   of the @google/genai SDK. Supports both Flash and Pro image models and
-//   an optional reference image (passed via inlineData).
-// - Body: {prompt, aspectRatio, model, referenceImage?}. Returns {image}.
+//   optional reference images (passed via inlineData).
+// - Body: {prompt, aspectRatio, model, referenceImage?, referenceImages?}.
+//   referenceImages accepts multiple base64 images (e.g. product + logo).
+//   Returns {image}.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 
 const FLASH_MODEL = 'gemini-2.5-flash-image';
@@ -17,7 +19,16 @@ type Body = {
   aspectRatio?: string;
   model?: string;
   referenceImage?: string;
+  referenceImages?: string[];
 };
+
+function parseInlinePart(dataUrl: string) {
+  const matches = dataUrl.match(/^data:(.+);base64,(.+)$/);
+  if (matches && matches.length === 3) {
+    return { inlineData: { mimeType: matches[1], data: matches[2] } };
+  }
+  return null;
+}
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const denied = requireAuth(request, env);
@@ -38,7 +49,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: 'Invalid JSON body.' }, 400);
   }
 
-  const { prompt, aspectRatio, model, referenceImage } = body;
+  const { prompt, aspectRatio, model, referenceImage, referenceImages } = body;
   if (typeof prompt !== 'string' || prompt.length === 0) {
     return jsonResponse({ error: 'Missing prompt.' }, 400);
   }
@@ -50,10 +61,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const parts: any[] = [];
-  if (referenceImage) {
-    const matches = referenceImage.match(/^data:(.+);base64,(.+)$/);
-    if (matches && matches.length === 3) {
-      parts.push({ inlineData: { mimeType: matches[1], data: matches[2] } });
+  const imageInputs =
+    Array.isArray(referenceImages) && referenceImages.length > 0
+      ? referenceImages
+      : referenceImage
+        ? [referenceImage]
+        : [];
+
+  for (const img of imageInputs) {
+    if (typeof img === 'string') {
+      const inlinePart = parseInlinePart(img);
+      if (inlinePart) parts.push(inlinePart);
     }
   }
   parts.push({ text: prompt });

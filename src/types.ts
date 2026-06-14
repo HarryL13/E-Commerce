@@ -8,8 +8,16 @@ export enum ModelType {
 export enum AppTab {
   BACKGROUND = 'background',
   MULTIVIEW = 'multiview',
-  SCENE = 'scene'
+  SCENE = 'scene',
+  LOGO = 'logo'
 }
+
+export type LogoPosition =
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+  | 'center';
 
 export interface GeneratedImage {
   id: string;

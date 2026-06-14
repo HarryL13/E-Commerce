@@ -4,15 +4,20 @@
 //   at top-14) is 64px (h-16), totaling ~120px. Increased main's pt-28 -> pt-32.
 // - Also bumped the progress toast's `top-24` -> `top-32` so it appears under both
 //   headers instead of on top of the inner tab bar.
+// - Added Logo Brand tab: upload logo + product image(s), position & size controls,
+//   optional prompt, AI compositing via Gemini multi-image reference.
+// - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 import React, { useState, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
 import { ImageGrid } from './components/ImageGrid';
 import { UploadZone } from './components/UploadZone';
+import { MultiUploadZone } from './components/MultiUploadZone';
 import { Button } from './components/Button';
-import { GeneratedImage, AspectRatio, ModelType, AppTab } from './types';
+import { GeneratedImage, AspectRatio, ModelType, AppTab, LogoPosition } from './types';
 import { generateImageFromGemini, ensureApiKey, analyzeImage } from './services/geminiService';
-import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box } from 'lucide-react';
+import { buildLogoPlacementPrompt, getLogoPositionLabel } from './utils/logoPlacement';
+import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box, Stamp } from 'lucide-react';
 
 // Helper to shuffle array for random selection
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -60,6 +65,14 @@ const ImageStudioApp: React.FC = () => {
   const bgBatchInputRef = useRef<HTMLInputElement>(null);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const multiViewBatchInputRef = useRef<HTMLInputElement>(null);
+
+  // Logo Brand tab state
+  const [logoImage, setLogoImage] = useState<string | null>(null);
+  const [logoProductFiles, setLogoProductFiles] = useState<{ file: File; preview: string }[]>([]);
+  const [logoPosition, setLogoPosition] = useState<LogoPosition>('top-right');
+  const [logoSizePercent, setLogoSizePercent] = useState(15);
+  const [logoPrompt, setLogoPrompt] = useState('');
+  const [logoAspectRatio, setLogoAspectRatio] = useState<AspectRatio>('1:1');
 
   const handleGenerate = useCallback(async (
     prompt: string, 
@@ -674,6 +687,84 @@ const ImageStudioApp: React.FC = () => {
     setMultiViewBatchFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  // --- Logo Brand Tab Handlers ---
+  const generateLogoComposite = async (
+    productPreview: string,
+    fileLabel?: string
+  ) => {
+    const prompt = buildLogoPlacementPrompt(logoPosition, logoSizePercent, logoPrompt);
+    const generatedBase64 = await generateImageFromGemini(
+      prompt,
+      logoAspectRatio,
+      model,
+      undefined,
+      [productPreview, logoImage!]
+    );
+
+    const newImage: GeneratedImage = {
+      id: crypto.randomUUID(),
+      url: generatedBase64,
+      prompt: fileLabel
+        ? `Logo (${fileLabel}): ${getLogoPositionLabel(logoPosition)} ${logoSizePercent}%`
+        : `Logo: ${getLogoPositionLabel(logoPosition)} ${logoSizePercent}%`,
+      timestamp: Date.now(),
+      aspectRatio: logoAspectRatio,
+      model,
+      tab: AppTab.LOGO,
+    };
+
+    setImages(prev => [newImage, ...prev]);
+    return newImage;
+  };
+
+  const handleLogoGenerate = async () => {
+    if (!logoImage) {
+      setError('Please upload a brand logo first.');
+      return;
+    }
+
+    if (logoProductFiles.length === 0) {
+      setError('Please upload at least one product image (up to 10).');
+      return;
+    }
+
+    setError(null);
+    setIsGenerating(true);
+    let successCount = 0;
+
+    try {
+      const canProceed = await ensureApiKey(model);
+      if (!canProceed) {
+        setIsGenerating(false);
+        setProgressMessage(null);
+        return;
+      }
+
+      for (let i = 0; i < logoProductFiles.length; i++) {
+        const { preview, file } = logoProductFiles[i];
+        setProgressMessage(`Processing ${i + 1} of ${logoProductFiles.length}...`);
+
+        if (i > 0) await new Promise(r => setTimeout(r, 1000));
+
+        try {
+          await generateLogoComposite(preview, file.name);
+          successCount++;
+        } catch (innerErr) {
+          console.error(`Logo item ${i} failed:`, innerErr);
+        }
+      }
+
+      if (successCount === 0) {
+        throw new Error('Logo placement failed for all images.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Logo placement failed.');
+    } finally {
+      setIsGenerating(false);
+      setProgressMessage(null);
+    }
+  };
+
   const renderWorkspace = () => {
     switch (activeTab) {
       case AppTab.BACKGROUND:
@@ -1245,13 +1336,210 @@ const ImageStudioApp: React.FC = () => {
             )}
           </div>
         );
+
+      case AppTab.LOGO:
+        const logoImages = images.filter(i => i.tab === AppTab.LOGO);
+        const logoPositions: { id: LogoPosition; label: string }[] = [
+          { id: 'top-left', label: '左上' },
+          { id: 'top-right', label: '右上' },
+          { id: 'center', label: '正中' },
+          { id: 'bottom-left', label: '左下' },
+          { id: 'bottom-right', label: '右下' },
+        ];
+        const logoRatios: AspectRatio[] = ['1:1', '3:4', '4:3', '9:16', '16:9'];
+
+        return (
+          <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              <div className="lg:col-span-5 space-y-4">
+                <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <Stamp className="w-4 h-4" /> Brand Logo
+                </h3>
+                <div className="h-[200px]">
+                  <UploadZone
+                    currentImage={logoImage}
+                    onImageUpload={setLogoImage}
+                    onClear={() => setLogoImage(null)}
+                    label="Upload Brand Logo"
+                    compact
+                  />
+                </div>
+
+                <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <Images className="w-4 h-4" /> Product Images (1–10)
+                </h3>
+                <MultiUploadZone
+                  items={logoProductFiles}
+                  onItemsChange={setLogoProductFiles}
+                  maxFiles={10}
+                  label="Upload Product Images"
+                  hint="Add 1 to 10 images. Drag & drop or click. The same logo applies to each."
+                />
+              </div>
+
+              <div className="lg:col-span-7 space-y-6">
+                <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
+                  <h3 className="text-lg font-medium text-white mb-2 flex items-center gap-2">
+                    <Stamp className="w-5 h-5 text-indigo-400" />
+                    Logo Placement
+                  </h3>
+                  <p className="text-slate-400 text-sm mb-6">
+                    Upload your brand logo and product image(s). Choose where the logo appears and its size.
+                  </p>
+
+                  <div className="mb-6">
+                    <label className="text-xs text-slate-500 mb-3 block uppercase tracking-wider font-semibold">
+                      Position
+                    </label>
+                    <div className="grid grid-cols-3 grid-rows-3 gap-2 max-w-[240px]">
+                      {logoPositions.map((pos) => {
+                        const isActive = logoPosition === pos.id;
+                        const gridClass =
+                          pos.id === 'top-left'
+                            ? 'col-start-1 row-start-1'
+                            : pos.id === 'top-right'
+                              ? 'col-start-3 row-start-1'
+                              : pos.id === 'center'
+                                ? 'col-start-2 row-start-2'
+                                : pos.id === 'bottom-left'
+                                  ? 'col-start-1 row-start-3'
+                                  : 'col-start-3 row-start-3';
+
+                        return (
+                          <button
+                            key={pos.id}
+                            onClick={() => setLogoPosition(pos.id)}
+                            className={`${gridClass} px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                              isActive
+                                ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20'
+                                : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'
+                            }`}
+                          >
+                            {pos.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="text-xs text-slate-500 mb-3 block uppercase tracking-wider font-semibold">
+                      Logo Size — {logoSizePercent}% of image width
+                    </label>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {[
+                        { label: '小', value: 8 },
+                        { label: '中', value: 15 },
+                        { label: '大', value: 25 },
+                      ].map((size) => (
+                        <button
+                          key={size.value}
+                          onClick={() => setLogoSizePercent(size.value)}
+                          className={`px-4 py-2 rounded-lg text-sm border transition-all ${
+                            logoSizePercent === size.value
+                              ? 'bg-indigo-600 border-indigo-500 text-white'
+                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500'
+                          }`}
+                        >
+                          {size.label} ({size.value}%)
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="range"
+                      min={5}
+                      max={40}
+                      step={1}
+                      value={logoSizePercent}
+                      onChange={(e) => setLogoSizePercent(Number(e.target.value))}
+                      className="w-full accent-indigo-500"
+                    />
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="text-xs text-slate-500 mb-3 block uppercase tracking-wider font-semibold">
+                      Aspect Ratio
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {logoRatios.map((ratio) => (
+                        <button
+                          key={ratio}
+                          onClick={() => setLogoAspectRatio(ratio)}
+                          className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${
+                            logoAspectRatio === ratio
+                              ? 'bg-indigo-600 border-indigo-500 text-white'
+                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500'
+                          }`}
+                        >
+                          {ratio}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-slate-500 mb-2 block uppercase tracking-wider font-semibold">
+                      Optional Prompt
+                    </label>
+                    <textarea
+                      value={logoPrompt}
+                      onChange={(e) => setLogoPrompt(e.target.value)}
+                      placeholder="e.g. Add soft shadow behind logo, keep minimal style..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 resize-none min-h-[80px]"
+                      disabled={isGenerating}
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleLogoGenerate}
+                  disabled={
+                    isGenerating ||
+                    !logoImage ||
+                    logoProductFiles.length === 0
+                  }
+                  isLoading={isGenerating}
+                  variant="primary"
+                  className="w-full h-14 text-base"
+                >
+                  {!isGenerating && <Wand2 className="w-5 h-5 mr-2" />}
+                  {logoProductFiles.length > 1
+                    ? `Generate ${logoProductFiles.length} Images with Logo`
+                    : 'Generate with Logo'}
+                </Button>
+              </div>
+            </div>
+
+            {logoImages.length > 0 && (
+              <div className="space-y-6 pt-8 border-t border-slate-800">
+                <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
+                  Recent Logo Generations
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {logoImages.slice(0, 10).map((img) => (
+                    <div
+                      key={img.id}
+                      className="relative aspect-square bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-lg group"
+                    >
+                      <img src={img.url} alt={img.prompt} className="w-full h-full object-contain" />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 translate-y-full group-hover:translate-y-0 transition-transform">
+                        <p className="text-white text-[10px] font-medium truncate">{img.prompt}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
       default:
         return null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 image-studio-root">
+    <div className="studio-root image-studio-root">
 
       {/* Header with Tabs */}
       <Header
