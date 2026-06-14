@@ -1,12 +1,6 @@
 // Changes:
-// - Switched from client-side password check (which required embedding the
-//   password in the JS bundle via process.env.APP_PASSWORD) to server-side
-//   verification via POST /api/auth.
-// - On success: password is saved to localStorage and sent as x-app-password
-//   on every subsequent /api/* request.
-// - On app startup: silently re-verifies the saved password by calling
-//   /api/auth again, so if the password was rotated server-side, cached
-//   sessions are invalidated automatically.
+// - Server-side password verification via POST /api/auth.
+// - Professional light login screen matching studio UI.
 import React, { useState, useEffect } from 'react';
 import { Lock, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import {
@@ -37,15 +31,10 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
     verifyPassword(saved)
       .then((ok) => {
         if (cancelled) return;
-        if (ok) {
-          setUnlocked(true);
-        } else {
-          clearSavedPassword();
-        }
+        if (ok) setUnlocked(true);
+        else clearSavedPassword();
       })
-      .catch(() => {
-        // Network error etc. — leave the gate shown, don't auto-unlock.
-      })
+      .catch(() => {})
       .finally(() => {
         if (!cancelled) setChecking(false);
       });
@@ -58,7 +47,6 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-
     try {
       const ok = await verifyPassword(input);
       if (ok) {
@@ -82,8 +70,8 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
 
   if (checking) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 text-slate-500 animate-spin" />
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-zinc-400 animate-spin" />
       </div>
     );
   }
@@ -94,7 +82,7 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
         {children}
         <button
           onClick={handleSignOut}
-          className="fixed bottom-4 right-4 z-[200] text-xs text-slate-500 hover:text-slate-300 bg-slate-900/80 backdrop-blur border border-slate-800 px-3 py-1.5 rounded-full shadow-lg transition-colors"
+          className="fixed bottom-4 right-4 z-[200] text-xs text-zinc-500 hover:text-zinc-700 bg-white/90 backdrop-blur border border-zinc-200 px-3 py-1.5 rounded-full shadow-sm transition-colors"
           title="Sign out"
         >
           Sign out
@@ -104,20 +92,20 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        <div className="bg-slate-900/70 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8">
+        <div className="bg-white border border-zinc-200 rounded-2xl shadow-lg p-8">
           <div className="flex flex-col items-center text-center mb-6">
-            <div className="bg-gradient-to-tr from-indigo-500 to-purple-500 p-3 rounded-2xl shadow-lg shadow-indigo-500/30 mb-4">
+            <div className="bg-indigo-600 p-3 rounded-2xl shadow-sm mb-4">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-xl font-semibold text-white">E-Commerce Studio</h1>
-            <p className="text-sm text-slate-400 mt-1">Enter the access password to continue</p>
+            <h1 className="text-xl font-semibold text-zinc-900">E-Commerce Studio</h1>
+            <p className="text-sm text-zinc-500 mt-1">Enter the access password to continue</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="password"
                 value={input}
@@ -125,12 +113,12 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
                 placeholder="Password"
                 autoFocus
                 autoComplete="current-password"
-                className="w-full bg-slate-950/60 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40"
+                className="studio-input pl-10"
               />
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
@@ -139,7 +127,7 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
             <button
               type="submit"
               disabled={submitting || input.length === 0}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-sm font-medium rounded-xl py-3 transition-colors flex items-center justify-center gap-2"
+              className="w-full btn-primary py-3 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:shadow-none"
             >
               {submitting ? (
                 <>
@@ -153,7 +141,7 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
           </form>
         </div>
 
-        <p className="text-center text-[11px] text-slate-600 mt-4">
+        <p className="text-center text-[11px] text-zinc-400 mt-4">
           Access is limited to authorized users only.
         </p>
       </div>

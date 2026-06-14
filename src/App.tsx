@@ -1,4 +1,4 @@
-// Changes: Unified dark studio shell — shared header and module switcher for SKU + Image Studio.
+// Changes: Professional light studio shell — shared header and module switcher.
 import React, { useState } from 'react';
 import SkuApp from './SkuApp';
 import ImageStudioApp from './ImageStudioApp';
@@ -11,13 +11,13 @@ export default function App() {
 
   return (
     <div className="studio-root min-h-screen">
-      <header className="sticky top-0 z-[100] bg-slate-950/90 backdrop-blur-xl border-b border-white/5">
+      <header className="sticky top-0 z-[100] bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 shrink-0">
-            <div className="bg-gradient-to-tr from-indigo-500 to-purple-500 p-1.5 rounded-lg shadow-lg shadow-indigo-500/20">
+            <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <span className="font-semibold text-white tracking-tight hidden sm:block">
+            <span className="font-semibold text-zinc-900 tracking-tight hidden sm:block">
               E-Commerce Studio
             </span>
           </div>

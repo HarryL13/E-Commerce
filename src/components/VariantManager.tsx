@@ -1,7 +1,8 @@
-// Changes: Unified dark studio theme for variant table editor.
+// Changes: Professional light theme variant table; auto-sync FIG-NOL SKU when size changes.
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Variant } from '../utils/csvExport';
+import { buildNolSku, parseNolSku } from '../utils/podPricing';
 
 interface VariantManagerProps {
   variants: Variant[];
@@ -33,19 +34,29 @@ export const VariantManager: React.FC<VariantManagerProps> = ({ variants, setVar
   };
 
   const updateVariant = (id: string, field: keyof Variant, value: string) => {
-    setVariants(variants.map((v) => (v.id === id ? { ...v, [field]: value } : v)));
+    setVariants(
+      variants.map((v) => {
+        if (v.id !== id) return v;
+        const updated = { ...v, [field]: value };
+        if (field === 'option1Value' && v.sku.startsWith('FIG-NOL')) {
+          const { abbrev } = parseNolSku(v.sku);
+          updated.sku = buildNolSku(value === 'Default' ? '' : value, abbrev);
+        }
+        return updated;
+      })
+    );
   };
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-base font-semibold flex items-center text-slate-200">
+        <h2 className="text-base font-semibold flex items-center text-zinc-900">
           <span className="studio-step">4</span>
           Variants
         </h2>
         <button
           onClick={addVariant}
-          className="flex items-center px-3 py-1.5 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl text-xs font-medium hover:bg-slate-700 transition-colors"
+          className="flex items-center px-3 py-1.5 bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-xl text-xs font-medium hover:bg-zinc-200 transition-colors"
         >
           <Plus className="w-3 h-3 mr-1" />
           Add Variant
@@ -53,54 +64,54 @@ export const VariantManager: React.FC<VariantManagerProps> = ({ variants, setVar
       </div>
 
       {variants.length === 0 ? (
-        <div className="text-center py-8 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800">
-          <p className="text-sm text-slate-500 mb-3">No variants added yet.</p>
+        <div className="text-center py-8 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200">
+          <p className="text-sm text-zinc-500 mb-3">No variants added yet.</p>
           <button onClick={addVariant} className="btn-secondary mx-auto">
             <Plus className="w-4 h-4 mr-2" />
             Add First Variant
           </button>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-slate-800">
-          <table className="min-w-full divide-y divide-slate-800">
-            <thead className="bg-slate-900/80">
+        <div className="overflow-x-auto rounded-2xl border border-zinc-200 shadow-sm">
+          <table className="min-w-full divide-y divide-zinc-200">
+            <thead className="bg-zinc-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Opt 1 Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Opt 1 Value</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Opt 2 Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Opt 2 Value</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">SKU</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Price</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Image URL</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider"></th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 1 Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 1 Value</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 2 Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 2 Value</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">SKU</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Price</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Image URL</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider"></th>
               </tr>
             </thead>
-            <tbody className="bg-slate-950/30 divide-y divide-slate-800">
+            <tbody className="bg-white divide-y divide-zinc-100">
               {variants.map((variant) => (
-                <tr key={variant.id} className="hover:bg-slate-800/30 transition-colors">
+                <tr key={variant.id} className="hover:bg-zinc-50/80 transition-colors">
                   <td className="px-4 py-2">
-                    <input type="text" value={variant.option1Name} onChange={(e) => updateVariant(variant.id, 'option1Name', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:ring-0 text-sm px-0 py-1 text-slate-200 transition-colors" placeholder="e.g. Color" />
+                    <input type="text" value={variant.option1Name} onChange={(e) => updateVariant(variant.id, 'option1Name', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 text-zinc-700 transition-colors" placeholder="e.g. Color" />
                   </td>
                   <td className="px-4 py-2">
-                    <input type="text" value={variant.option1Value} onChange={(e) => updateVariant(variant.id, 'option1Value', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:ring-0 text-sm px-0 py-1 font-medium text-slate-100 transition-colors" placeholder="e.g. Red" />
+                    <input type="text" value={variant.option1Value} onChange={(e) => updateVariant(variant.id, 'option1Value', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-medium text-zinc-900 transition-colors" placeholder="e.g. Red" />
                   </td>
                   <td className="px-4 py-2">
-                    <input type="text" value={variant.option2Name} onChange={(e) => updateVariant(variant.id, 'option2Name', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:ring-0 text-sm px-0 py-1 text-slate-200 transition-colors" placeholder="e.g. Size" />
+                    <input type="text" value={variant.option2Name} onChange={(e) => updateVariant(variant.id, 'option2Name', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 text-zinc-700 transition-colors" placeholder="e.g. Size" />
                   </td>
                   <td className="px-4 py-2">
-                    <input type="text" value={variant.option2Value} onChange={(e) => updateVariant(variant.id, 'option2Value', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:ring-0 text-sm px-0 py-1 font-medium text-slate-100 transition-colors" placeholder="e.g. Large" />
+                    <input type="text" value={variant.option2Value} onChange={(e) => updateVariant(variant.id, 'option2Value', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-medium text-zinc-900 transition-colors" placeholder="e.g. Large" />
                   </td>
                   <td className="px-4 py-2">
-                    <input type="text" value={variant.sku} onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:ring-0 text-sm px-0 py-1 font-mono text-xs text-slate-300 transition-colors" placeholder="SKU" />
+                    <input type="text" value={variant.sku} onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-mono text-xs text-zinc-600 transition-colors" placeholder="SKU" />
                   </td>
                   <td className="px-4 py-2">
-                    <input type="text" value={variant.price} onChange={(e) => updateVariant(variant.id, 'price', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:ring-0 text-sm px-0 py-1 font-mono text-slate-200 transition-colors" placeholder="0.00" />
+                    <input type="text" value={variant.price} onChange={(e) => updateVariant(variant.id, 'price', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-mono text-zinc-900 transition-colors" placeholder="0.00" />
                   </td>
                   <td className="px-4 py-2">
-                    <input type="text" value={variant.imageSrc} onChange={(e) => updateVariant(variant.id, 'imageSrc', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:ring-0 text-sm px-0 py-1 font-mono text-xs text-slate-300 transition-colors" placeholder="https://..." />
+                    <input type="text" value={variant.imageSrc} onChange={(e) => updateVariant(variant.id, 'imageSrc', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-mono text-xs text-zinc-600 transition-colors" placeholder="https://..." />
                   </td>
                   <td className="px-4 py-2 text-center">
-                    <button onClick={() => removeVariant(variant.id)} className="text-slate-500 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-red-500/10" title="Remove Variant">
+                    <button onClick={() => removeVariant(variant.id)} className="text-zinc-400 hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50" title="Remove Variant">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </td>

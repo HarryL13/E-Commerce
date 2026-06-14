@@ -1,8 +1,8 @@
 // Changes:
-// - Removed browser-side API key usage; calls go through server proxy.
-// - Unified UI with Image Studio: dark studio theme, sub-header below app shell.
+// - Server-side API proxy; unified light studio UI.
+// - Pricing modes: FIG-POD default table + FIG-NOL custom sizes/prices with per-row code.
 import React, { useState, useEffect } from 'react';
-import { Download, Wand2, AlertCircle, Save, History, Plus, CheckCircle2, PackageSearch, Trash2 } from 'lucide-react';
+import { Download, Wand2, AlertCircle, Save, History, CheckCircle2, PackageSearch, Trash2, RefreshCw, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ImageUpload } from './components/ImageUpload';
 import { VariantManager } from './components/VariantManager';
@@ -10,6 +10,21 @@ import { DescriptionEditor } from './components/DescriptionEditor';
 import { generateProductDetails } from './services/gemini';
 import { exportCSV, Variant, ProductData, ExportItem } from './utils/csvExport';
 import { resizeImage } from './utils/imageUtils';
+import {
+  PriceMode,
+  POD_SIZE_PRICES,
+  POD_SIZES,
+  getProductAbbreviation,
+  buildPodVariants,
+  buildNolVariantsFromRows,
+  createCustomSizeRow,
+  CustomSizeRow,
+  applyPodAbbrevToVariants,
+  isPodVariantSet,
+  isNolVariantSet,
+  customSizeRowsFromVariants,
+  buildNolSku,
+} from './utils/podPricing';
 
 export default function SkuApp() {
   const [view, setView] = useState<'generator' | 'history'>('generator');
@@ -24,7 +39,69 @@ export default function SkuApp() {
   
   const [contextMode, setContextMode] = useState<'series' | 'template'>('series');
   const [contextText, setContextText] = useState('');
-  const [defaultPrice, setDefaultPrice] = useState('0.00');
+  const [priceMode, setPriceMode] = useState<PriceMode>('pod-default');
+  const [customSizeRows, setCustomSizeRows] = useState<CustomSizeRow[]>([createCustomSizeRow()]);
+  const [productAbbrev, setProductAbbrev] = useState('');
+
+  const buildVariantsForProduct = (
+    title: string,
+    handle: string,
+    imageSrc: string
+  ): Variant[] => {
+    if (priceMode === 'pod-default') {
+      return buildPodVariants(productAbbrev.trim() || undefined, imageSrc);
+    }
+    return buildNolVariantsFromRows(customSizeRows, imageSrc);
+  };
+
+  const addCustomSizeRow = () => {
+    const sharedCode = customSizeRows[0]?.code || '';
+    setCustomSizeRows((prev) => [...prev, createCustomSizeRow('0.00', sharedCode)]);
+  };
+
+  const updateCustomSizeRow = (id: string, field: 'size' | 'code' | 'price', value: string) => {
+    setCustomSizeRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== id) return row;
+        if (field === 'code') {
+          return {
+            ...row,
+            code: value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3),
+          };
+        }
+        return { ...row, [field]: value };
+      })
+    );
+  };
+
+  const removeCustomSizeRow = (id: string) => {
+    setCustomSizeRows((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((row) => row.id !== id);
+    });
+  };
+
+  const syncAbbrevFromTitle = () => {
+    const abbrev = getProductAbbreviation(productData.title, productData.handle);
+    if (priceMode === 'pod-default') {
+      setProductAbbrev(abbrev);
+      if (variants.length > 0) {
+        setVariants(applyPodAbbrevToVariants(variants, abbrev));
+      }
+    } else {
+      setCustomSizeRows((prev) =>
+        prev.map((row) => ({ ...row, code: abbrev }))
+      );
+      if (variants.length > 0 && isNolVariantSet(variants)) {
+        setVariants(
+          variants.map((v) => {
+            const size = v.option1Value === 'Default' ? '' : v.option1Value;
+            return { ...v, sku: buildNolSku(size, abbrev) };
+          })
+        );
+      }
+    }
+  };
 
   const [productData, setProductData] = useState<ProductData>({
     title: '',
@@ -119,6 +196,11 @@ export default function SkuApp() {
       return;
     }
 
+    if (priceMode === 'custom' && !customSizeRows.some((r) => r.size.trim())) {
+      setError('Add at least one size for custom pricing.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
@@ -148,21 +230,13 @@ export default function SkuApp() {
                 tags: result.tags || [],
                 seo_title: result.seo_title || '',
                 seo_description: result.seo_description || '',
-                mainImageSrc: imagePreviews[i] || '' // Save the preview image so it shows in history
+                mainImageSrc: imagePreviews[i] || '',
               },
-              variants: [{
-                id: Date.now().toString() + Math.random().toString(),
-                option1Name: 'Title',
-                option1Value: 'Default Title',
-                option2Name: '',
-                option2Value: '',
-                option3Name: '',
-                option3Value: '',
-                price: defaultPrice || '0.00',
-                compareAtPrice: '',
-                sku: result.handle ? `${result.handle}-01` : '',
-                imageSrc: imagePreviews[i] || ''
-              }]
+              variants: buildVariantsForProduct(
+                result.title || '',
+                result.handle || '',
+                imagePreviews[i] || ''
+              ),
             });
             
             // Wait a short time between requests to avoid rate limits
@@ -220,19 +294,13 @@ export default function SkuApp() {
         }));
         
         setAboutSection(result.about_section || '');
-        setVariants([{
-          id: Date.now().toString(),
-          option1Name: 'Title',
-          option1Value: 'Default Title',
-          option2Name: '',
-          option2Value: '',
-          option3Name: '',
-          option3Value: '',
-          price: defaultPrice || '0.00',
-          compareAtPrice: '',
-          sku: result.handle ? `${result.handle}-01` : '',
-          imageSrc: imagePreviews[0] || ''
-        }]);
+        setVariants(
+          buildVariantsForProduct(
+            result.title || '',
+            result.handle || '',
+            imagePreviews[0] || ''
+          )
+        );
       }
     } catch (err: any) {
       console.error(err);
@@ -314,10 +382,10 @@ export default function SkuApp() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-6 bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-start"
+              className="mb-6 bg-red-50 border border-red-200 p-4 rounded-2xl flex items-start"
             >
-              <AlertCircle className="w-5 h-5 text-red-400 mr-3 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-200 font-medium">{error}</p>
+              <AlertCircle className="w-5 h-5 text-red-500 mr-3 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-700 font-medium">{error}</p>
             </motion.div>
           )}
           {successMsg && (
@@ -325,10 +393,10 @@ export default function SkuApp() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-6 bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl flex items-start"
+              className="mb-6 bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-start"
             >
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 mr-3 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-emerald-200 font-medium">{successMsg}</p>
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 mr-3 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-emerald-700 font-medium">{successMsg}</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -346,7 +414,7 @@ export default function SkuApp() {
               {/* Left Column: Inputs */}
               <div className="lg:col-span-4 space-y-6">
                 <div className="card-modern">
-                  <h2 className="text-base font-semibold mb-4 flex items-center justify-center text-slate-200">
+                  <h2 className="text-base font-semibold mb-4 flex items-center justify-center text-zinc-900">
                     <span className="studio-step">1</span>
                     Product Image(s)
                   </h2>
@@ -355,21 +423,177 @@ export default function SkuApp() {
                     imagePreviews={imagePreviews} 
                     onRemoveImage={handleRemoveImage}
                   />
-                  <div className="mt-6 pt-6 border-t border-slate-800">
-                    <label className="label-modern text-center block mb-2">Default Price ($)</label>
-                    <input
-                      type="number"
-                      value={defaultPrice}
-                      onChange={(e) => setDefaultPrice(e.target.value)}
-                      className="input-modern text-center"
-                      placeholder="0.00"
-                    />
+                  <div className="mt-6 pt-6 border-t border-zinc-200 space-y-4">
+                    <label className="label-modern text-center block">Pricing</label>
+                    <div className="studio-tab-group p-1 w-full">
+                      <button
+                        type="button"
+                        onClick={() => setPriceMode('pod-default')}
+                        className={`studio-tab flex-1 text-center ${priceMode === 'pod-default' ? 'studio-tab-active' : ''}`}
+                      >
+                        FIG-POD Default
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceMode('custom')}
+                        className={`studio-tab flex-1 text-center ${priceMode === 'custom' ? 'studio-tab-active' : ''}`}
+                      >
+                        Custom Price
+                      </button>
+                    </div>
+
+                    {priceMode === 'pod-default' ? (
+                      <div className="space-y-3">
+                        <p className="text-xs text-zinc-500 text-center leading-relaxed">
+                          SKU format: <span className="font-mono text-zinc-700">FIG-POD-[size]-XXX</span>
+                        </p>
+                        <div className="rounded-xl border border-zinc-200 overflow-hidden text-xs">
+                          <table className="w-full">
+                            <thead className="bg-zinc-50 text-zinc-500">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Size</th>
+                                <th className="px-3 py-2 text-right font-medium">Price</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100">
+                              {POD_SIZES.map((size) => (
+                                <tr key={size}>
+                                  <td className="px-3 py-2 text-zinc-700">{size}</td>
+                                  <td className="px-3 py-2 text-right font-mono text-zinc-900">
+                                    ${POD_SIZE_PRICES[size]}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div>
+                          <label className="label-modern">Product code (optional, 3 letters)</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              maxLength={3}
+                              value={productAbbrev}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+                                setProductAbbrev(val);
+                                if (priceMode === 'pod-default' && variants.length > 0 && isPodVariantSet(variants)) {
+                                  setVariants(applyPodAbbrevToVariants(variants, val));
+                                }
+                              }}
+                              className="input-modern text-center font-mono uppercase"
+                              placeholder="Optional"
+                            />
+                            <button
+                              type="button"
+                              onClick={syncAbbrevFromTitle}
+                              className="btn-secondary px-3 shrink-0"
+                              title="Suggest code from product title"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-1.5 text-center">
+                            Leave empty for <span className="font-mono">FIG-POD-6cm</span>
+                            {productAbbrev
+                              ? ` · With code: FIG-POD-6cm-${productAbbrev}`
+                              : ' · Or add code: FIG-POD-6cm-ABC'}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-zinc-500">
+                            SKU: <span className="font-mono text-zinc-700">FIG-NOL-[size]-XXX</span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={syncAbbrevFromTitle}
+                            className="btn-secondary px-2 py-1 text-[10px] shrink-0"
+                            title="Fill all codes from product title"
+                          >
+                            <RefreshCw className="w-3 h-3 mr-1 inline" />
+                            Fill codes
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {customSizeRows.map((row, idx) => (
+                            <div
+                              key={row.id}
+                              className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-3 space-y-2"
+                            >
+                              <div className="flex gap-2 items-end">
+                                <div className="flex-[1.2] min-w-0">
+                                  <label className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1 block">
+                                    Size {idx + 1}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={row.size}
+                                    onChange={(e) => updateCustomSizeRow(row.id, 'size', e.target.value)}
+                                    className="input-modern font-mono text-sm"
+                                    placeholder="e.g. 8cm, Large"
+                                  />
+                                </div>
+                                <div className="w-20 shrink-0">
+                                  <label className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1 block">
+                                    Code
+                                  </label>
+                                  <input
+                                    type="text"
+                                    maxLength={3}
+                                    value={row.code}
+                                    onChange={(e) => updateCustomSizeRow(row.id, 'code', e.target.value)}
+                                    className="input-modern font-mono text-sm text-center uppercase"
+                                    placeholder="ABC"
+                                  />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <label className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1 block">
+                                    Price ($)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={row.price}
+                                    onChange={(e) => updateCustomSizeRow(row.id, 'price', e.target.value)}
+                                    className="input-modern font-mono text-sm"
+                                    placeholder="0.00"
+                                  />
+                                </div>
+                                {customSizeRows.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeCustomSizeRow(row.id)}
+                                    className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                                    title="Remove size"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                              {row.size.trim() && (
+                                <p className="text-[10px] text-zinc-500 font-mono">
+                                  SKU: {buildNolSku(row.size, row.code)}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <button type="button" onClick={addCustomSizeRow} className="btn-secondary w-full">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Size
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="card-modern space-y-5">
                   <div className="flex flex-col items-center justify-center mb-4 space-y-3">
-                    <h2 className="text-base font-semibold flex items-center text-slate-200">
+                    <h2 className="text-base font-semibold flex items-center text-zinc-900">
                       <span className="studio-step">2</span>
                       Context
                     </h2>
@@ -428,7 +652,7 @@ export default function SkuApp() {
               {/* Right Column: Output & Editing */}
               <div className="lg:col-span-8 space-y-6">
                 <div className="card-modern">
-                  <h2 className="text-base font-semibold mb-6 flex items-center text-slate-200">
+                  <h2 className="text-base font-semibold mb-6 flex items-center text-zinc-900">
                     <span className="studio-step">3</span>
                     Listing Details
                   </h2>
@@ -487,7 +711,7 @@ export default function SkuApp() {
                     <textarea
                       value={aboutSection}
                       onChange={e => setAboutSection(e.target.value)}
-                      className="input-modern resize-none bg-slate-900/40 text-slate-400"
+                      className="input-modern resize-none bg-white/40 text-zinc-500"
                       rows={4}
                     />
                     <p className="text-[11px] text-slate-500 mt-2 ml-1">This text is already integrated into the HTML description above.</p>
@@ -529,12 +753,12 @@ export default function SkuApp() {
               transition={{ duration: 0.2 }}
               className="studio-card p-0 overflow-hidden"
             >
-              <div className="px-6 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/80">
-                <h2 className="text-base font-semibold text-slate-200">Generated Products History</h2>
+              <div className="px-6 py-5 border-b border-zinc-200 flex justify-between items-center bg-zinc-50">
+                <h2 className="text-base font-semibold text-zinc-900">Generated Products History</h2>
                 {history.length > 0 && (
                   <button
                     onClick={clearHistory}
-                    className="text-xs font-medium text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                    className="text-xs font-medium text-red-500 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
                   >
                     Clear History
                   </button>
@@ -543,10 +767,10 @@ export default function SkuApp() {
               
               {history.length === 0 ? (
                 <div className="p-16 text-center text-slate-500">
-                  <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <PackageSearch className="w-8 h-8 text-slate-600" />
                   </div>
-                  <p className="font-medium text-slate-200 mb-1">No products saved yet</p>
+                  <p className="font-medium text-zinc-900 mb-1">No products saved yet</p>
                   <p className="text-sm mb-6">Generate and save products to see them here.</p>
                   <button 
                     onClick={() => setView('generator')}
@@ -556,21 +780,21 @@ export default function SkuApp() {
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-slate-800">
+                <div className="divide-y divide-zinc-200">
                   {history.map((item, idx) => (
-                    <div key={idx} className="p-6 hover:bg-slate-800/30 transition-colors flex items-start space-x-5 group">
+                    <div key={idx} className="p-6 hover:bg-zinc-100/30 transition-colors flex items-start space-x-5 group">
                       {item.product.mainImageSrc ? (
-                        <img src={item.product.mainImageSrc} alt="" className="w-24 h-24 object-cover rounded-2xl border border-slate-700 shadow-sm" />
+                        <img src={item.product.mainImageSrc} alt="" className="w-24 h-24 object-cover rounded-2xl border border-zinc-200 shadow-sm" />
                       ) : (
-                        <div className="w-24 h-24 bg-slate-800 rounded-2xl border border-slate-700 flex items-center justify-center text-slate-500 text-xs font-medium">
+                        <div className="w-24 h-24 bg-zinc-100 rounded-2xl border border-zinc-200 flex items-center justify-center text-slate-500 text-xs font-medium">
                           No Img
                         </div>
                       )}
                       <div className="flex-1 min-w-0 py-1">
-                        <h3 className="text-base font-semibold text-slate-100 truncate mb-1">{item.product.title || 'Untitled Product'}</h3>
+                        <h3 className="text-base font-semibold text-zinc-900 truncate mb-1">{item.product.title || 'Untitled Product'}</h3>
                         <p className="text-xs text-slate-500 mb-3 font-mono truncate">{item.product.handle || 'no-handle'}</p>
                         <div className="flex flex-wrap gap-2">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300 uppercase tracking-wider border border-slate-700">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-700 uppercase tracking-wider border border-zinc-200">
                             {item.variants.length} Variants
                           </span>
                           {item.product.type && (
@@ -585,6 +809,18 @@ export default function SkuApp() {
                           onClick={() => {
                             setProductData(item.product);
                             setVariants(item.variants);
+                            if (isPodVariantSet(item.variants)) {
+                              setPriceMode('pod-default');
+                              const sku = item.variants[0]?.sku || '';
+                              const match = sku.match(/^FIG-POD-\d+cm(?:-([A-Z]{3}))?$/i);
+                              setProductAbbrev(match?.[1]?.toUpperCase() || '');
+                            } else if (isNolVariantSet(item.variants)) {
+                              setPriceMode('custom');
+                              setCustomSizeRows(customSizeRowsFromVariants(item.variants));
+                            } else {
+                              setPriceMode('custom');
+                              setCustomSizeRows(customSizeRowsFromVariants(item.variants));
+                            }
                             setView('generator');
                           }}
                           className="btn-secondary"
@@ -593,7 +829,7 @@ export default function SkuApp() {
                         </button>
                         <button
                           onClick={() => deleteHistoryItem(idx)}
-                          className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
+                          className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"
                           title="Delete item"
                         >
                           <Trash2 className="w-4 h-4" />

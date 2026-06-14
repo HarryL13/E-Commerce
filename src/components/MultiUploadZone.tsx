@@ -1,5 +1,4 @@
-// Changes: Multi-image upload zone for Image Studio (dark theme). Supports drag-and-drop
-// and file picker, up to maxFiles (default 10).
+// Changes: Professional light theme multi-image upload zone.
 import React, { useCallback, useRef } from 'react';
 import { Upload, X, Package } from 'lucide-react';
 import { Button } from './Button';
@@ -74,7 +73,7 @@ export const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
 
   return (
     <div
-      className={`bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col min-h-[280px] ${className}`}
+      className={`bg-white border border-zinc-200 rounded-2xl p-6 flex flex-col min-h-[280px] shadow-sm ${className}`}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
@@ -83,12 +82,12 @@ export const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
           className="flex-1 flex flex-col items-center justify-center text-center space-y-4 cursor-pointer"
           onClick={triggerUpload}
         >
-          <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
-            <Package className="w-8 h-8 text-slate-500" />
+          <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center border border-zinc-200">
+            <Package className="w-8 h-8 text-zinc-400" />
           </div>
           <div>
-            <h4 className="text-slate-200 font-medium">{label}</h4>
-            <p className="text-slate-500 text-sm mt-1 max-w-[240px] mx-auto">{hint}</p>
+            <h4 className="text-zinc-800 font-medium">{label}</h4>
+            <p className="text-zinc-500 text-sm mt-1 max-w-[240px] mx-auto">{hint}</p>
           </div>
           <Button onClick={(e) => { e.stopPropagation(); triggerUpload(); }} variant="secondary">
             <Upload className="w-4 h-4 mr-2" /> Upload Images
@@ -97,7 +96,7 @@ export const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
       ) : (
         <div className="flex flex-col h-full min-h-[240px]">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-medium text-slate-300">
+            <span className="text-sm font-medium text-zinc-700">
               {items.length} / {maxFiles} images
             </span>
             <div className="flex gap-2">
@@ -114,7 +113,7 @@ export const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
                 onClick={() => onItemsChange([])}
                 variant="ghost"
                 size="sm"
-                className="h-8 text-red-400 hover:text-red-300"
+                className="h-8 text-red-500 hover:text-red-600"
               >
                 Clear
               </Button>
@@ -128,21 +127,21 @@ export const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
                   <img
                     src={item.preview}
                     alt={item.file.name}
-                    className="w-full h-full rounded-lg bg-black object-cover border border-slate-700"
+                    className="w-full h-full rounded-lg bg-zinc-100 object-cover border border-zinc-200"
                   />
                   <button
                     onClick={() => removeItem(idx)}
-                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
                   >
                     <X className="w-3 h-3" />
                   </button>
-                  <p className="text-[10px] text-slate-500 mt-1 truncate px-0.5">{item.file.name}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1 truncate px-0.5">{item.file.name}</p>
                 </div>
               ))}
               {items.length < maxFiles && (
                 <button
                   onClick={triggerUpload}
-                  className="aspect-square rounded-lg border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-500 hover:text-indigo-400 hover:border-indigo-500/50 transition-colors"
+                  className="aspect-square rounded-lg border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-zinc-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors bg-zinc-50"
                 >
                   <Upload className="w-5 h-5 mb-1" />
                   <span className="text-[10px] font-medium">Add</span>
@@ -153,14 +152,7 @@ export const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
         </div>
       )}
 
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept="image/*"
-        className="hidden"
-        onChange={handleInputChange}
-      />
+      <input ref={inputRef} type="file" multiple accept="image/*" className="hidden" onChange={handleInputChange} />
     </div>
   );
 };

@@ -772,13 +772,13 @@ const ImageStudioApp: React.FC = () => {
           <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Background Mode Toggle */}
             <div className="flex justify-center">
-                <div className="bg-slate-900 p-1.5 rounded-xl border border-slate-800 flex gap-1 shadow-lg shadow-black/20">
+                <div className="bg-white p-1.5 rounded-xl border border-zinc-200 flex gap-1 shadow-lg shadow-zinc-200/50">
                     <button 
                         onClick={() => setBgMode('single')}
                         className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                             bgMode === 'single' 
-                            ? 'bg-slate-800 text-white shadow-sm ring-1 ring-white/10' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            ? 'bg-zinc-100 text-white shadow-sm ring-1 ring-zinc-200' 
+                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
                         }`}
                     >
                         <Box className="w-4 h-4" /> Single Product
@@ -788,7 +788,7 @@ const ImageStudioApp: React.FC = () => {
                         className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                             bgMode === 'batch' 
                             ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
                         }`}
                     >
                         <Images className="w-4 h-4" /> Batch Studio
@@ -807,8 +807,8 @@ const ImageStudioApp: React.FC = () => {
                         label="Upload Subject Image"
                      />
                   </div>
-                  <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-                    <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <div className="bg-white p-6 rounded-2xl border border-zinc-200">
+                    <h3 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider mb-4 flex items-center gap-2">
                       <Layers className="w-4 h-4" /> Background Options
                     </h3>
                     <div className="grid grid-cols-1 gap-3">
@@ -843,7 +843,7 @@ const ImageStudioApp: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="h-full min-h-[400px] bg-slate-900 rounded-2xl border-2 border-dashed border-slate-800 flex items-center justify-center relative overflow-hidden">
+                <div className="h-full min-h-[400px] bg-white rounded-2xl border-2 border-dashed border-zinc-200 flex items-center justify-center relative overflow-hidden">
                    {images.filter(i => i.tab === AppTab.BACKGROUND).length > 0 ? (
                      <img 
                         src={images.filter(i => i.tab === AppTab.BACKGROUND)[0].url} 
@@ -862,17 +862,17 @@ const ImageStudioApp: React.FC = () => {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                   {/* Left: Queue */}
                   <div className="lg:col-span-5 space-y-4">
-                      <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-2">
                            <Images className="w-4 h-4" /> Batch Queue
                       </h3>
-                      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 h-[400px] flex flex-col">
+                      <div className="bg-white border border-zinc-200 rounded-2xl p-6 h-[400px] flex flex-col">
                           {bgBatchFiles.length === 0 ? (
                               <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-                                  <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
+                                  <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center">
                                       <Package className="w-8 h-8 text-slate-500" />
                                   </div>
                                   <div>
-                                      <h4 className="text-slate-200 font-medium">No files queued</h4>
+                                      <h4 className="text-zinc-900 font-medium">No files queued</h4>
                                       <p className="text-slate-500 text-sm mt-1 max-w-[200px] mx-auto">Upload up to 10 product images to process them together.</p>
                                   </div>
                                   <Button onClick={triggerBgBatchUpload} variant="secondary">
@@ -882,22 +882,22 @@ const ImageStudioApp: React.FC = () => {
                           ) : (
                               <div className="flex flex-col h-full">
                                   <div className="flex items-center justify-between mb-4">
-                                      <span className="text-sm font-medium text-slate-300">{bgBatchFiles.length} files loaded</span>
+                                      <span className="text-sm font-medium text-zinc-700">{bgBatchFiles.length} files loaded</span>
                                       <div className="flex gap-2">
                                           <Button onClick={triggerBgBatchUpload} variant="ghost" size="sm" className="h-8" disabled={bgBatchFiles.length >= 10}>
                                               <Upload className="w-3 h-3 mr-2" /> Add
                                           </Button>
-                                          <Button onClick={() => setBgBatchFiles([])} variant="ghost" size="sm" className="h-8 text-red-400 hover:text-red-300">
+                                          <Button onClick={() => setBgBatchFiles([])} variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-300">
                                               Clear
                                           </Button>
                                       </div>
                                   </div>
                                   <div className="flex-1 overflow-y-auto pr-2 space-y-2 scrollbar-thin scrollbar-thumb-slate-700">
                                       {bgBatchFiles.map((file, idx) => (
-                                          <div key={idx} className="flex items-center gap-3 p-2 bg-slate-800 rounded-lg border border-slate-700 group">
+                                          <div key={idx} className="flex items-center gap-3 p-2 bg-zinc-100 rounded-lg border border-zinc-200 group">
                                               <img src={file.preview} className="w-10 h-10 rounded bg-black object-cover" />
-                                              <span className="text-sm text-slate-300 truncate flex-1">{file.file.name}</span>
-                                              <button onClick={() => removeBgBatchFile(idx)} className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <span className="text-sm text-zinc-700 truncate flex-1">{file.file.name}</span>
+                                              <button onClick={() => removeBgBatchFile(idx)} className="text-slate-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                   <X className="w-4 h-4" />
                                               </button>
                                           </div>
@@ -911,11 +911,11 @@ const ImageStudioApp: React.FC = () => {
 
                   {/* Right: Controls */}
                   <div className="lg:col-span-7 space-y-4">
-                      <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-                        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                      <div className="bg-white p-6 rounded-2xl border border-zinc-200">
+                        <h3 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider mb-4 flex items-center gap-2">
                           <Layers className="w-4 h-4" /> Batch Background Options
                         </h3>
-                        <p className="text-slate-400 text-sm mb-6">
+                        <p className="text-zinc-500 text-sm mb-6">
                             Apply the same background to all images in your queue.
                         </p>
                         <div className="grid grid-cols-1 gap-3">
@@ -954,13 +954,13 @@ const ImageStudioApp: React.FC = () => {
 
              {/* Recent Results for Background */}
              {bgMode === 'batch' && images.filter(i => i.tab === AppTab.BACKGROUND).length > 0 && (
-               <div className="space-y-6 pt-8 border-t border-slate-800">
+               <div className="space-y-6 pt-8 border-t border-zinc-200">
                   <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">Recent Background Generations</h3>
+                      <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider">Recent Background Generations</h3>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {images.filter(i => i.tab === AppTab.BACKGROUND).slice(0, 10).map((img) => (
-                          <div key={img.id} className="relative aspect-square bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-lg group">
+                          <div key={img.id} className="relative aspect-square bg-white rounded-xl overflow-hidden border border-zinc-200 shadow-lg group">
                               <img 
                                 src={img.url} 
                                 alt={img.prompt} 
@@ -985,13 +985,13 @@ const ImageStudioApp: React.FC = () => {
           <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* MultiView Mode Toggle */}
             <div className="flex justify-center">
-                <div className="bg-slate-900 p-1.5 rounded-xl border border-slate-800 flex gap-1 shadow-lg shadow-black/20">
+                <div className="bg-white p-1.5 rounded-xl border border-zinc-200 flex gap-1 shadow-lg shadow-zinc-200/50">
                     <button 
                         onClick={() => setMultiViewMode('single')}
                         className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                             multiViewMode === 'single' 
-                            ? 'bg-slate-800 text-white shadow-sm ring-1 ring-white/10' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            ? 'bg-zinc-100 text-white shadow-sm ring-1 ring-zinc-200' 
+                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
                         }`}
                     >
                         <Box className="w-4 h-4" /> Single Product
@@ -1001,7 +1001,7 @@ const ImageStudioApp: React.FC = () => {
                         className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                             multiViewMode === 'batch' 
                             ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
                         }`}
                     >
                         <Images className="w-4 h-4" /> Batch Studio
@@ -1021,12 +1021,12 @@ const ImageStudioApp: React.FC = () => {
                         />
                     </div>
                     <div className="md:col-span-2 flex flex-col justify-end">
-                        <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 mb-2">
-                        <h3 className="text-lg font-medium text-white mb-2 flex items-center gap-2">
+                        <div className="bg-white p-6 rounded-2xl border border-zinc-200 mb-2">
+                        <h3 className="text-lg font-medium text-zinc-900 mb-2 flex items-center gap-2">
                             <Grid3X3 className="w-5 h-5 text-indigo-400" />
                             Multi-View Generator
                         </h3>
-                        <p className="text-slate-400 text-sm">
+                        <p className="text-zinc-500 text-sm">
                             Upload a single image to generate consistent <strong>Top, Side, and Zoom-in</strong> views automatically. Perfect for product listings.
                         </p>
                         </div>
@@ -1043,17 +1043,17 @@ const ImageStudioApp: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     {/* Left: Queue */}
                     <div className="lg:col-span-5 space-y-4">
-                        <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-2">
                              <Images className="w-4 h-4" /> Batch Queue
                         </h3>
-                        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 h-[360px] flex flex-col">
+                        <div className="bg-white border border-zinc-200 rounded-2xl p-6 h-[360px] flex flex-col">
                             {multiViewBatchFiles.length === 0 ? (
                                 <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-                                    <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
+                                    <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center">
                                         <Package className="w-8 h-8 text-slate-500" />
                                     </div>
                                     <div>
-                                        <h4 className="text-slate-200 font-medium">No files queued</h4>
+                                        <h4 className="text-zinc-900 font-medium">No files queued</h4>
                                         <p className="text-slate-500 text-sm mt-1 max-w-[200px] mx-auto">Upload multiple product images to generate views for all of them.</p>
                                     </div>
                                     <Button onClick={triggerMultiViewBatchUpload} variant="secondary">
@@ -1063,22 +1063,22 @@ const ImageStudioApp: React.FC = () => {
                             ) : (
                                 <div className="flex flex-col h-full">
                                     <div className="flex items-center justify-between mb-4">
-                                        <span className="text-sm font-medium text-slate-300">{multiViewBatchFiles.length} files loaded</span>
+                                        <span className="text-sm font-medium text-zinc-700">{multiViewBatchFiles.length} files loaded</span>
                                         <div className="flex gap-2">
                                             <Button onClick={triggerMultiViewBatchUpload} variant="ghost" size="sm" className="h-8">
                                                 <Upload className="w-3 h-3 mr-2" /> Add
                                             </Button>
-                                            <Button onClick={() => setMultiViewBatchFiles([])} variant="ghost" size="sm" className="h-8 text-red-400 hover:text-red-300">
+                                            <Button onClick={() => setMultiViewBatchFiles([])} variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-300">
                                                 Clear
                                             </Button>
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto pr-2 space-y-2 scrollbar-thin scrollbar-thumb-slate-700">
                                         {multiViewBatchFiles.map((file, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-2 bg-slate-800 rounded-lg border border-slate-700 group">
+                                            <div key={idx} className="flex items-center gap-3 p-2 bg-zinc-100 rounded-lg border border-zinc-200 group">
                                                 <img src={file.preview} className="w-10 h-10 rounded bg-black object-cover" />
-                                                <span className="text-sm text-slate-300 truncate flex-1">{file.file.name}</span>
-                                                <button onClick={() => removeMultiViewBatchFile(idx)} className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span className="text-sm text-zinc-700 truncate flex-1">{file.file.name}</span>
+                                                <button onClick={() => removeMultiViewBatchFile(idx)} className="text-slate-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <X className="w-4 h-4" />
                                                 </button>
                                             </div>
@@ -1092,18 +1092,18 @@ const ImageStudioApp: React.FC = () => {
 
                     {/* Right: Controls */}
                     <div className="lg:col-span-7 space-y-4 flex flex-col justify-end h-full min-h-[360px]">
-                        <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 mb-2">
-                           <h3 className="text-lg font-medium text-white mb-2 flex items-center gap-2">
+                        <div className="bg-white p-6 rounded-2xl border border-zinc-200 mb-2">
+                           <h3 className="text-lg font-medium text-zinc-900 mb-2 flex items-center gap-2">
                                 <Layers className="w-5 h-5 text-indigo-400" />
                                 Batch Multi-View Processor
                            </h3>
-                           <p className="text-slate-400 text-sm mb-4">
+                           <p className="text-zinc-500 text-sm mb-4">
                                This will generate <strong>3 views</strong> (Top, Side, Zoom) for <strong>every image</strong> in your queue.
                            </p>
                            <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                                <span className="px-2 py-1 bg-slate-800 rounded border border-slate-700">Top View</span>
-                                <span className="px-2 py-1 bg-slate-800 rounded border border-slate-700">Side Profile</span>
-                                <span className="px-2 py-1 bg-slate-800 rounded border border-slate-700">Zoom Detail</span>
+                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
+                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
+                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Zoom Detail</span>
                            </div>
                         </div>
                         <PromptBar 
@@ -1120,11 +1120,11 @@ const ImageStudioApp: React.FC = () => {
 
             {/* Latest Results (Only show in single mode or if images exist) */}
             {latestMultiView.length > 0 && (
-              <div className="space-y-4 pt-4 border-t border-slate-800">
-                 <h4 className="text-sm font-medium text-slate-400 uppercase tracking-wider pl-1">Latest Generation</h4>
+              <div className="space-y-4 pt-4 border-t border-zinc-200">
+                 <h4 className="text-sm font-medium text-zinc-500 uppercase tracking-wider pl-1">Latest Generation</h4>
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {latestMultiView.map((img, idx) => (
-                      <div key={img.id} className="relative aspect-square bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-xl group">
+                      <div key={img.id} className="relative aspect-square bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl group">
                           <img 
                             src={img.url} 
                             alt={img.prompt} 
@@ -1148,13 +1148,13 @@ const ImageStudioApp: React.FC = () => {
             
             {/* MODE TOGGLE */}
             <div className="flex justify-center">
-                <div className="bg-slate-900 p-1.5 rounded-xl border border-slate-800 flex gap-1 shadow-lg shadow-black/20">
+                <div className="bg-white p-1.5 rounded-xl border border-zinc-200 flex gap-1 shadow-lg shadow-zinc-200/50">
                     <button 
                         onClick={() => setSceneMode('single')}
                         className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                             sceneMode === 'single' 
-                            ? 'bg-slate-800 text-white shadow-sm ring-1 ring-white/10' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            ? 'bg-zinc-100 text-white shadow-sm ring-1 ring-zinc-200' 
+                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
                         }`}
                     >
                         <Box className="w-4 h-4" /> Single Product
@@ -1164,7 +1164,7 @@ const ImageStudioApp: React.FC = () => {
                         className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                             sceneMode === 'batch' 
                             ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' 
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
                         }`}
                     >
                         <Images className="w-4 h-4" /> Batch Studio
@@ -1176,7 +1176,7 @@ const ImageStudioApp: React.FC = () => {
                 
                 {/* LEFT COLUMN: UPLOAD / CONTEXT */}
                 <div className="lg:col-span-5 space-y-4">
-                    <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-2">
                         {sceneMode === 'single' ? <Box className="w-4 h-4" /> : <Images className="w-4 h-4" />}
                         {sceneMode === 'single' ? 'Input Image' : 'Batch Queue'}
                     </h3>
@@ -1191,14 +1191,14 @@ const ImageStudioApp: React.FC = () => {
                             />
                         </div>
                     ) : (
-                        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 h-[360px] flex flex-col">
+                        <div className="bg-white border border-zinc-200 rounded-2xl p-6 h-[360px] flex flex-col">
                             {batchFiles.length === 0 ? (
                                 <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-                                    <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
+                                    <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center">
                                         <Package className="w-8 h-8 text-slate-500" />
                                     </div>
                                     <div>
-                                        <h4 className="text-slate-200 font-medium">No files queued</h4>
+                                        <h4 className="text-zinc-900 font-medium">No files queued</h4>
                                         <p className="text-slate-500 text-sm mt-1 max-w-[200px] mx-auto">Upload multiple product images to process them all at once.</p>
                                     </div>
                                     <Button onClick={triggerBatchUpload} variant="secondary">
@@ -1208,22 +1208,22 @@ const ImageStudioApp: React.FC = () => {
                             ) : (
                                 <div className="flex flex-col h-full">
                                     <div className="flex items-center justify-between mb-4">
-                                        <span className="text-sm font-medium text-slate-300">{batchFiles.length} files loaded</span>
+                                        <span className="text-sm font-medium text-zinc-700">{batchFiles.length} files loaded</span>
                                         <div className="flex gap-2">
                                             <Button onClick={triggerBatchUpload} variant="ghost" size="sm" className="h-8">
                                                 <Upload className="w-3 h-3 mr-2" /> Add
                                             </Button>
-                                            <Button onClick={() => setBatchFiles([])} variant="ghost" size="sm" className="h-8 text-red-400 hover:text-red-300">
+                                            <Button onClick={() => setBatchFiles([])} variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-300">
                                                 Clear
                                             </Button>
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto pr-2 space-y-2 scrollbar-thin scrollbar-thumb-slate-700">
                                         {batchFiles.map((file, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-2 bg-slate-800 rounded-lg border border-slate-700 group">
+                                            <div key={idx} className="flex items-center gap-3 p-2 bg-zinc-100 rounded-lg border border-zinc-200 group">
                                                 <img src={file.preview} className="w-10 h-10 rounded bg-black object-cover" />
-                                                <span className="text-sm text-slate-300 truncate flex-1">{file.file.name}</span>
-                                                <button onClick={() => removeBatchFile(idx)} className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span className="text-sm text-zinc-700 truncate flex-1">{file.file.name}</span>
+                                                <button onClick={() => removeBatchFile(idx)} className="text-slate-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <X className="w-4 h-4" />
                                                 </button>
                                             </div>
@@ -1241,8 +1241,8 @@ const ImageStudioApp: React.FC = () => {
                      {/* Smart Styles */}
                      <div>
                         <div className="flex items-center gap-2 mb-4">
-                            <Palette className="w-4 h-4 text-slate-400" />
-                            <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
+                            <Palette className="w-4 h-4 text-zinc-500" />
+                            <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider">
                                 {sceneMode === 'single' ? 'Generate Variations' : 'Apply Batch Style'}
                             </h3>
                         </div>
@@ -1277,25 +1277,25 @@ const ImageStudioApp: React.FC = () => {
                                     disabled={isGenerating || (sceneMode === 'single' && !sceneImage) || (sceneMode === 'batch' && batchFiles.length === 0)}
                                     className={`relative p-5 rounded-2xl text-left border transition-all duration-300 group overflow-hidden ${
                                         (sceneMode === 'single' && !sceneImage) || (sceneMode === 'batch' && batchFiles.length === 0)
-                                        ? 'bg-slate-900 border-slate-800 opacity-50 cursor-not-allowed'
-                                        : 'bg-slate-900 border-slate-800 hover:border-slate-600 hover:shadow-2xl'
+                                        ? 'bg-white border-zinc-200 opacity-50 cursor-not-allowed'
+                                        : 'bg-white border-zinc-200 hover:border-zinc-300 hover:shadow-2xl'
                                     }`}
                                 >
                                     <div className={`absolute inset-0 bg-gradient-to-br from-${style.color}-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity`}></div>
                                     <div className={`w-10 h-10 rounded-xl bg-${style.color}-500/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300`}>
                                         <style.icon className={`w-5 h-5 text-${style.color}-400`} />
                                     </div>
-                                    <h4 className="text-slate-200 font-semibold mb-1 group-hover:text-white">{style.label}</h4>
-                                    <p className="text-xs text-slate-500 leading-relaxed group-hover:text-slate-400">{style.desc}</p>
+                                    <h4 className="text-zinc-900 font-semibold mb-1 group-hover:text-white">{style.label}</h4>
+                                    <p className="text-xs text-slate-500 leading-relaxed group-hover:text-zinc-500">{style.desc}</p>
                                 </button>
                             ))}
                         </div>
                      </div>
 
                      <div className="relative flex items-center py-2">
-                        <div className="flex-grow border-t border-slate-800"></div>
+                        <div className="flex-grow border-t border-zinc-200"></div>
                         <span className="flex-shrink-0 mx-4 text-[10px] text-slate-600 uppercase tracking-widest font-bold">Or Custom Prompt</span>
-                        <div className="flex-grow border-t border-slate-800"></div>
+                        <div className="flex-grow border-t border-zinc-200"></div>
                      </div>
 
                      {/* Custom Prompt */}
@@ -1314,20 +1314,20 @@ const ImageStudioApp: React.FC = () => {
 
              {/* Recent Results for Scene */}
              {images.filter(i => i.tab === AppTab.SCENE).length > 0 && (
-               <div className="space-y-6 pt-8 border-t border-slate-800">
+               <div className="space-y-6 pt-8 border-t border-zinc-200">
                   <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">Recent Scene Generations</h3>
+                      <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider">Recent Scene Generations</h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                      {images.filter(i => i.tab === AppTab.SCENE).slice(0, 4).map(img => (
-                        <div key={img.id} className="group relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 hover:border-slate-600 transition-all">
+                        <div key={img.id} className="group relative aspect-video bg-white rounded-2xl overflow-hidden border border-zinc-200 hover:border-zinc-300 transition-all">
                           <img 
                             src={img.url} 
                             alt={img.prompt} 
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-4">
-                             <p className="text-xs text-center text-slate-200 line-clamp-3">{img.prompt}</p>
+                             <p className="text-xs text-center text-zinc-900 line-clamp-3">{img.prompt}</p>
                           </div>
                         </div>
                      ))}
@@ -1352,7 +1352,7 @@ const ImageStudioApp: React.FC = () => {
           <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               <div className="lg:col-span-5 space-y-4">
-                <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider flex items-center gap-2">
                   <Stamp className="w-4 h-4" /> Brand Logo
                 </h3>
                 <div className="h-[200px]">
@@ -1365,7 +1365,7 @@ const ImageStudioApp: React.FC = () => {
                   />
                 </div>
 
-                <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider flex items-center gap-2">
                   <Images className="w-4 h-4" /> Product Images (1–10)
                 </h3>
                 <MultiUploadZone
@@ -1378,12 +1378,12 @@ const ImageStudioApp: React.FC = () => {
               </div>
 
               <div className="lg:col-span-7 space-y-6">
-                <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-                  <h3 className="text-lg font-medium text-white mb-2 flex items-center gap-2">
+                <div className="bg-white p-6 rounded-2xl border border-zinc-200">
+                  <h3 className="text-lg font-medium text-zinc-900 mb-2 flex items-center gap-2">
                     <Stamp className="w-5 h-5 text-indigo-400" />
                     Logo Placement
                   </h3>
-                  <p className="text-slate-400 text-sm mb-6">
+                  <p className="text-zinc-500 text-sm mb-6">
                     Upload your brand logo and product image(s). Choose where the logo appears and its size.
                   </p>
 
@@ -1412,7 +1412,7 @@ const ImageStudioApp: React.FC = () => {
                             className={`${gridClass} px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
                               isActive
                                 ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20'
-                                : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'
+                                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:border-zinc-300 hover:text-zinc-900'
                             }`}
                           >
                             {pos.label}
@@ -1438,7 +1438,7 @@ const ImageStudioApp: React.FC = () => {
                           className={`px-4 py-2 rounded-lg text-sm border transition-all ${
                             logoSizePercent === size.value
                               ? 'bg-indigo-600 border-indigo-500 text-white'
-                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500'
+                              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:border-zinc-400'
                           }`}
                         >
                           {size.label} ({size.value}%)
@@ -1468,7 +1468,7 @@ const ImageStudioApp: React.FC = () => {
                           className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${
                             logoAspectRatio === ratio
                               ? 'bg-indigo-600 border-indigo-500 text-white'
-                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500'
+                              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:border-zinc-400'
                           }`}
                         >
                           {ratio}
@@ -1485,7 +1485,7 @@ const ImageStudioApp: React.FC = () => {
                       value={logoPrompt}
                       onChange={(e) => setLogoPrompt(e.target.value)}
                       placeholder="e.g. Add soft shadow behind logo, keep minimal style..."
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 resize-none min-h-[80px]"
+                      className="w-full bg-white border border-zinc-200 rounded-xl px-4 py-3 text-sm text-zinc-900 placeholder-zinc-400 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 resize-none min-h-[80px]"
                       disabled={isGenerating}
                     />
                   </div>
@@ -1511,15 +1511,15 @@ const ImageStudioApp: React.FC = () => {
             </div>
 
             {logoImages.length > 0 && (
-              <div className="space-y-6 pt-8 border-t border-slate-800">
-                <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
+              <div className="space-y-6 pt-8 border-t border-zinc-200">
+                <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider">
                   Recent Logo Generations
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {logoImages.slice(0, 10).map((img) => (
                     <div
                       key={img.id}
-                      className="relative aspect-square bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-lg group"
+                      className="relative aspect-square bg-white rounded-xl overflow-hidden border border-zinc-200 shadow-lg group"
                     >
                       <img src={img.url} alt={img.prompt} className="w-full h-full object-contain" />
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 translate-y-full group-hover:translate-y-0 transition-transform">
@@ -1554,7 +1554,7 @@ const ImageStudioApp: React.FC = () => {
         
         {/* Progress Indicator */}
         {isGenerating && (
-           <div className="fixed top-32 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur-md border border-slate-700 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
+           <div className="fixed top-32 left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-md border border-zinc-200 text-zinc-900 px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
              <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
              <span className="text-sm font-medium">{progressMessage || "Processing..."}</span>
            </div>
@@ -1562,7 +1562,7 @@ const ImageStudioApp: React.FC = () => {
 
         {/* Error Notification */}
         {error && (
-          <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 text-red-200 animate-in fade-in slide-in-from-top-2 max-w-2xl mx-auto">
+          <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2 max-w-2xl mx-auto">
             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="flex-1">
               <h4 className="font-medium text-red-100">Generation Failed</h4>
@@ -1570,7 +1570,7 @@ const ImageStudioApp: React.FC = () => {
             </div>
             <button 
               onClick={() => setError(null)}
-              className="text-red-400 hover:text-red-100 transition-colors"
+              className="text-red-500 hover:text-red-100 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1583,13 +1583,13 @@ const ImageStudioApp: React.FC = () => {
         </div>
 
         {/* History / Gallery */}
-        <div className="border-t border-slate-800 pt-12">
+        <div className="border-t border-zinc-200 pt-12">
           <div className="flex items-center justify-between mb-8">
-              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <h2 className="text-xl font-semibold text-zinc-900 flex items-center gap-2">
                 History
               </h2>
               {images.length > 0 && (
-                  <Button variant="ghost" size="sm" onClick={() => setImages([])} className="text-slate-500 hover:text-red-400">
+                  <Button variant="ghost" size="sm" onClick={() => setImages([])} className="text-slate-500 hover:text-red-500">
                       <Trash2 className="w-4 h-4 mr-2" /> Clear All
                   </Button>
               )}

@@ -1,9 +1,6 @@
-// Changes:
-// - Fixed: Image Studio sub-tabs were hidden behind App module switcher (top-14 stack).
-// - Unified branding with E-Commerce Studio shell; renamed Imaginarium AI → Image Studio.
-// - Added Logo Brand tab.
+// Changes: Professional light theme; unified with E-Commerce Studio shell.
 import React from 'react';
-import { Sparkles, Zap, Crown, Layers, Grid3X3, Palette, Stamp } from 'lucide-react';
+import { Image, Zap, Crown, Layers, Grid3X3, Palette, Stamp } from 'lucide-react';
 import { ModelType, AppTab } from '../types';
 
 interface HeaderProps {
@@ -29,11 +26,9 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="studio-subheader">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-white shrink-0">
-          <div className="bg-gradient-to-tr from-indigo-500 to-purple-500 p-1.5 rounded-lg shadow-lg shadow-indigo-500/20">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <h1 className="text-sm font-semibold tracking-tight hidden sm:block text-slate-200">
+        <div className="flex items-center gap-2 text-zinc-900 shrink-0">
+          <Image className="w-4 h-4 text-indigo-600" />
+          <h1 className="text-sm font-semibold tracking-tight hidden sm:block text-zinc-800">
             Image Studio
           </h1>
         </div>
@@ -59,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => onModelChange(ModelType.FLASH)}
             className={`studio-tab flex items-center gap-1.5 ${
-              currentModel === ModelType.FLASH ? 'studio-tab-active !text-indigo-300' : ''
+              currentModel === ModelType.FLASH ? 'studio-tab-active text-indigo-700' : ''
             }`}
           >
             <Zap className="w-3.5 h-3.5" />
@@ -68,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => onModelChange(ModelType.PRO)}
             className={`studio-tab flex items-center gap-1.5 ${
-              currentModel === ModelType.PRO ? 'studio-tab-active !text-purple-300' : ''
+              currentModel === ModelType.PRO ? 'studio-tab-active text-purple-700' : ''
             }`}
           >
             <Crown className="w-3.5 h-3.5" />

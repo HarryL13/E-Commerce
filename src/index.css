@@ -1,4 +1,4 @@
-/* Changes: Unified dark studio design system for SKU Generator + Image Studio. */
+/* Changes: Professional light studio design system for SKU Generator + Image Studio. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
@@ -9,70 +9,76 @@
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500/30 selection:text-white;
+    @apply bg-zinc-50 text-zinc-900 font-sans antialiased selection:bg-indigo-100 selection:text-indigo-900;
   }
 }
 
 @layer components {
   .studio-root {
-    @apply min-h-screen bg-slate-950 text-slate-100 font-sans;
+    @apply min-h-screen bg-zinc-50 text-zinc-900 font-sans;
   }
 
   .studio-subheader {
-    @apply fixed top-14 left-0 right-0 z-40 h-16 bg-slate-950/80 backdrop-blur-xl border-b border-white/5;
+    @apply fixed top-14 left-0 right-0 z-40 h-16 bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm;
   }
 
   .studio-card {
-    @apply bg-slate-900/50 rounded-2xl border border-slate-800 p-6 shadow-sm;
+    @apply bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm;
   }
 
   .studio-input {
-    @apply w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40 placeholder:text-slate-600;
+    @apply w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 text-sm text-zinc-900 transition-all focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 placeholder:text-zinc-400;
   }
 
   .studio-label {
-    @apply block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5;
+    @apply block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1.5;
   }
 
   .studio-step {
-    @apply w-6 h-6 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 flex items-center justify-center text-xs font-semibold mr-2;
+    @apply w-6 h-6 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center justify-center text-xs font-semibold mr-2;
   }
 
   .studio-tab-group {
-    @apply flex items-center p-1 bg-slate-900/50 rounded-xl border border-white/10;
+    @apply flex items-center p-1 bg-zinc-100 rounded-xl border border-zinc-200/80;
   }
 
   .studio-tab {
-    @apply px-4 py-2 text-xs font-medium rounded-lg transition-all whitespace-nowrap text-slate-400 hover:text-slate-200 hover:bg-slate-800/50;
+    @apply px-4 py-2 text-xs font-medium rounded-lg transition-all whitespace-nowrap text-zinc-500 hover:text-zinc-800 hover:bg-white/70;
   }
 
   .studio-tab-active {
-    @apply bg-slate-800 text-white shadow-sm ring-1 ring-white/10;
+    @apply bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200;
+  }
+
+  .studio-mode-active {
+    @apply bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200;
+  }
+
+  .studio-mode-batch-active {
+    @apply bg-indigo-600 text-white shadow-md shadow-indigo-500/15;
   }
 
   .btn-primary {
-    @apply flex items-center justify-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-lg shadow-indigo-500/20;
+    @apply flex items-center justify-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-sm;
   }
 
   .btn-secondary {
-    @apply flex items-center justify-center px-5 py-2.5 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl text-sm font-medium hover:bg-slate-700 hover:border-slate-600 transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+    @apply flex items-center justify-center px-5 py-2.5 bg-white border border-zinc-200 text-zinc-700 rounded-xl text-sm font-medium hover:bg-zinc-50 hover:border-zinc-300 transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-sm;
   }
 
-  /* Legacy aliases used by SKU components */
   .input-modern {
-    @apply w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40 placeholder:text-slate-600;
+    @apply w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 text-sm text-zinc-900 transition-all focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 placeholder:text-zinc-400;
   }
 
   .label-modern {
-    @apply block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5;
+    @apply block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1.5;
   }
 
   .card-modern {
-    @apply bg-slate-900/50 rounded-2xl border border-slate-800 p-6 shadow-sm;
+    @apply bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm;
   }
 }
 
-/* Unified scrollbar */
 .studio-root ::-webkit-scrollbar,
 .image-studio-root ::-webkit-scrollbar {
   width: 8px;
@@ -80,14 +86,14 @@
 }
 .studio-root ::-webkit-scrollbar-track,
 .image-studio-root ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #f4f4f5;
 }
 .studio-root ::-webkit-scrollbar-thumb,
 .image-studio-root ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #d4d4d8;
   border-radius: 4px;
 }
 .studio-root ::-webkit-scrollbar-thumb:hover,
 .image-studio-root ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: #a1a1aa;
 }
