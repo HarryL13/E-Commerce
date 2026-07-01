@@ -217,7 +217,10 @@ async function generateViaGeminiNative(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { imageConfig },
+        generationConfig: {
+          responseModalities: ['TEXT', 'IMAGE'],
+          imageConfig,
+        },
       }),
     }
   );

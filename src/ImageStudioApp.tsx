@@ -8,7 +8,7 @@
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
-// - Header resolution selector (1K / 2K / 4K) passed through image generation API.
+// - Multi-View uses Gemini image models with dedicated angle prompts + required reference.
 import React, { useState, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -18,7 +18,12 @@ import { MultiUploadZone } from './components/MultiUploadZone';
 import { Button } from './components/Button';
 import { GeneratedImage, AspectRatio, ImageResolution, ModelType, AppTab, LogoPosition } from './types';
 import { generateImageFromGemini, ensureApiKey, analyzeImage } from './services/geminiService';
-import { normalizeImageResolution } from './utils/imageModels';
+import { normalizeImageResolution, resolveGeminiImageModel } from './utils/imageModels';
+import {
+  MULTIVIEW_ANGLES,
+  buildMultiViewPrompt,
+  buildMultiViewPromptWithProduct,
+} from './utils/multiViewPrompts';
 import { buildLogoPlacementPrompt, getLogoPositionLabel } from './utils/logoPlacement';
 import {
   buildSceneBatchCustomPrompt,
@@ -223,18 +228,17 @@ const ImageStudioApp: React.FC = () => {
 
   // --- MultiView Tab Handler (Single) ---
   const handleMultiViewGenerate = async (prompt: string, ratio: AspectRatio) => {
-    const viewConfigs = [
-      { suffix: "Top-down view (plan view).", label: "Top" },
-      { suffix: "Side profile view.", label: "Side" },
-      { suffix: "Detailed zoom-in close-up.", label: "Zoom" }
-    ];
-    
+    if (!multiViewImage) {
+      setError('Please upload a reference product image. Multi-View needs the original photo to preserve the product.');
+      return;
+    }
+
     setIsGenerating(true);
     setError(null);
     setProgressMessage("Starting Multi-View Generation...");
 
     try {
-      const targetModel = model;
+      const targetModel = resolveGeminiImageModel(model);
       const canProceed = await ensureApiKey(targetModel);
       if (!canProceed) {
           setIsGenerating(false);
@@ -244,20 +248,20 @@ const ImageStudioApp: React.FC = () => {
 
       let successCount = 0;
 
-      for (const [index, view] of viewConfigs.entries()) {
+      for (const [index, view] of MULTIVIEW_ANGLES.entries()) {
         try {
           setProgressMessage(`Generating ${view.label} view (${index + 1}/3)...`);
           if (index > 0) {
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
 
-          const fullPrompt = `${view.suffix} ${prompt} Professional product photography, neutral background, consistent lighting.`;
-          
+          const fullPrompt = buildMultiViewPrompt(view.key, prompt);
+
           const base64Image = await generateImageFromGemini(
-            fullPrompt, 
-            ratio, 
-            targetModel, 
-            multiViewImage || undefined,
+            fullPrompt,
+            ratio,
+            targetModel,
+            multiViewImage,
             undefined,
             imageResolution
           );
@@ -265,23 +269,24 @@ const ImageStudioApp: React.FC = () => {
           const newImage: GeneratedImage = {
             id: crypto.randomUUID(),
             url: base64Image,
-            prompt: fullPrompt, 
+            prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
             timestamp: Date.now(),
             aspectRatio: ratio,
             model: targetModel,
+            imageResolution,
             tab: AppTab.MULTIVIEW
           };
 
           setImages(prev => [newImage, ...prev]);
           successCount++;
-          
+
         } catch (innerErr) {
           console.error(`Failed to generate ${view.label} view:`, innerErr);
         }
       }
 
       if (successCount === 0) {
-        throw new Error("Failed to generate any views. Please check your connection or try a different image.");
+        throw new Error("Failed to generate any views. Try 1K/2K resolution or a clearer reference photo.");
       }
 
     } catch (err: any) {
@@ -303,13 +308,7 @@ const ImageStudioApp: React.FC = () => {
      setIsGenerating(true);
      setError(null);
      
-     const viewConfigs = [
-        { suffix: "Top-down view (plan view).", label: "Top" },
-        { suffix: "Side profile view.", label: "Side" },
-        { suffix: "Detailed zoom-in close-up.", label: "Zoom" }
-     ];
-
-     const targetModel = model;
+     const targetModel = resolveGeminiImageModel(model);
 
      try {
         const canProceed = await ensureApiKey(targetModel);
@@ -323,32 +322,29 @@ const ImageStudioApp: React.FC = () => {
 
         for (let i = 0; i < multiViewBatchFiles.length; i++) {
             const { preview, file } = multiViewBatchFiles[i];
-            
-            // Step 1: Determine Prompt
-            let promptToUse = commonPrompt;
-            if (!promptToUse || promptToUse.trim() === '') {
+
+            let productDescription = commonPrompt.trim();
+            if (!productDescription) {
                 setProgressMessage(`Analyzing Item ${i + 1}/${multiViewBatchFiles.length}...`);
                 try {
-                    promptToUse = await analyzeImage(preview);
+                    productDescription = await analyzeImage(preview);
                 } catch (e) {
-                    promptToUse = "Product";
+                    productDescription = 'product';
                 }
             }
 
-            // Step 2: Generate Views
-            for (const [vIdx, view] of viewConfigs.entries()) {
+            for (const [vIdx, view] of MULTIVIEW_ANGLES.entries()) {
                 setProgressMessage(`Item ${i + 1}: Generating ${view.label} (${vIdx + 1}/3)...`);
-                
-                // Rate limiting pause
+
                 if (vIdx > 0 || i > 0) await new Promise(r => setTimeout(r, 1500));
 
                 try {
-                    const fullPrompt = `${view.suffix} ${promptToUse} Professional product photography, neutral background, consistent lighting.`;
-                    
+                    const fullPrompt = buildMultiViewPromptWithProduct(view.key, productDescription);
+
                     const base64Image = await generateImageFromGemini(
-                        fullPrompt, 
-                        ratio, 
-                        targetModel, 
+                        fullPrompt,
+                        ratio,
+                        targetModel,
                         preview,
                         undefined,
                         imageResolution
@@ -357,10 +353,11 @@ const ImageStudioApp: React.FC = () => {
                     const newImage: GeneratedImage = {
                         id: crypto.randomUUID(),
                         url: base64Image,
-                        prompt: `Batch (${file.name}): ${view.label}`, 
+                        prompt: `Batch (${file.name}): ${view.label}`,
                         timestamp: Date.now(),
                         aspectRatio: ratio,
                         model: targetModel,
+                        imageResolution,
                         tab: AppTab.MULTIVIEW
                     };
 
@@ -986,7 +983,7 @@ const ImageStudioApp: React.FC = () => {
                             currentImage={multiViewImage} 
                             onImageUpload={setMultiViewImage} 
                             onClear={() => setMultiViewImage(null)} 
-                            label="Reference (Optional)"
+                            label="Product Reference (Required)"
                         />
                     </div>
                     <div className="md:col-span-2 flex flex-col justify-end">
@@ -996,13 +993,13 @@ const ImageStudioApp: React.FC = () => {
                             Multi-View Generator
                         </h3>
                         <p className="text-zinc-500 text-sm">
-                            Upload a single image to generate consistent <strong>Top, Side, and Zoom-in</strong> views automatically. Perfect for product listings.
+                            Upload your product photo, then generate consistent <strong>Top, Side, and Zoom</strong> views. Uses Gemini image models and preserves the exact product from your reference.
                         </p>
                         </div>
                         <PromptBar 
                         onGenerate={handleMultiViewGenerate} 
                         isGenerating={isGenerating} 
-                        placeholder="Describe your subject (e.g., 'A futuristic sneaker')..."
+                        placeholder="Optional notes (e.g., 'ceramic mug, matte white finish')..."
                         defaultAspectRatio="1:1" 
                         />
                     </div>
