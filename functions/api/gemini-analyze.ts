@@ -1,9 +1,12 @@
-// Changes: Image analysis via company LiteLLM proxy (gemini-3-flash) or direct Gemini API.
+// Changes: Image analysis via proxy qwen3-vl-flash (gemini-3-flash removed from gateway).
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
-import { resolveProxyConfig } from './_utils/upstream';
+import {
+  getProxyVisionModel,
+  proxyChatCompletion,
+  resolveProxyConfig,
+} from './_utils/upstream';
 
 const DIRECT_MODEL = 'gemini-3-flash-preview';
-const PROXY_MODEL = 'gemini-3-flash';
 
 const ANALYZE_PROMPT =
   'Identify the main product in this image for e-commerce photography. Output ONLY a short descriptor: product name plus key visual traits (material, color, finish, style). Examples: "matte black ceramic vase", "pink vinyl action figure", "brushed silver watch". No full sentences.';
@@ -28,38 +31,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   try {
     if (proxy.useProxy) {
-      const upstream = await fetch(`${proxy.baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${proxy.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: PROXY_MODEL,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'image_url', image_url: { url: base64Image } },
-                { type: 'text', text: ANALYZE_PROMPT },
-              ],
-            },
-          ],
-          max_tokens: 128,
-          temperature: 0.2,
-        }),
-      });
-
-      const raw = await upstream.text();
-      if (!upstream.ok) {
-        return jsonResponse(
-          { error: `Proxy upstream ${upstream.status}`, raw: raw.slice(0, 500) },
-          502
-        );
-      }
-
-      const json = JSON.parse(raw);
-      const text = json?.choices?.[0]?.message?.content?.trim();
+      const text = await proxyChatCompletion(
+        env,
+        getProxyVisionModel(env),
+        [
+          { type: 'image_url', image_url: { url: base64Image } },
+          { type: 'text', text: ANALYZE_PROMPT },
+        ],
+        { maxTokens: 128, temperature: 0.2 }
+      );
       return jsonResponse({ text: text || 'object' });
     }
 
@@ -111,7 +91,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ text: text?.trim() || 'object' });
   } catch (err: any) {
     return jsonResponse(
-      { error: `Upstream fetch failed: ${err?.message || String(err)}` },
+      { error: err?.message || `Upstream fetch failed: ${String(err)}` },
       502
     );
   }

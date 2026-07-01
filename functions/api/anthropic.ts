@@ -1,6 +1,11 @@
-// Changes: SKU copy generation via company LiteLLM proxy (gemini-3-flash) or direct Gemini API.
+// Changes: SKU copy via proxy qwen3-vl-flash (with image) / qwen3.6-flash (text-only).
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
-import { resolveProxyConfig } from './_utils/upstream';
+import {
+  getProxyTextModel,
+  getProxyVisionModel,
+  proxyChatCompletion,
+  resolveProxyConfig,
+} from './_utils/upstream';
 
 type Body = {
   imageBase64?: string | null;
@@ -9,7 +14,6 @@ type Body = {
 };
 
 const DIRECT_MODEL = 'gemini-2.5-flash';
-const PROXY_MODEL = 'gemini-3-flash';
 
 function buildPrompt(contextMode: 'series' | 'template', contextText: string) {
   return `You are an expert Shopify product copywriter and SEO specialist.
@@ -72,48 +76,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   try {
     if (proxy.useProxy) {
+      const proxyModel = imageBase64 ? getProxyVisionModel(env) : getProxyTextModel(env);
       const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
       if (imageBase64) {
         content.push({ type: 'image_url', image_url: { url: imageBase64 } });
       }
       content.push({ type: 'text', text: prompt });
 
-      const upstream = await fetch(`${proxy.baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${proxy.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: PROXY_MODEL,
-          messages: [{ role: 'user', content }],
-          max_tokens: 4096,
-          temperature: 0.7,
-        }),
-      });
-
-      const rawText = await upstream.text();
-      if (!upstream.ok) {
-        return jsonResponse(
-          { error: `Proxy upstream ${upstream.status}: ${rawText.slice(0, 500)}` },
-          502
-        );
-      }
-
-      const json = JSON.parse(rawText);
-      const textBlock: string | undefined = json?.choices?.[0]?.message?.content;
-      if (!textBlock) {
-        return jsonResponse(
-          { error: 'No text content from model.', raw: rawText.slice(0, 500) },
-          502
-        );
-      }
-
       try {
+        const textBlock = await proxyChatCompletion(env, proxyModel, content, {
+          maxTokens: 4096,
+          temperature: 0.7,
+        });
         return jsonResponse(parseModelJson(textBlock));
-      } catch {
+      } catch (err: any) {
         return jsonResponse(
-          { error: 'Model returned invalid JSON.', raw: textBlock.slice(0, 500) },
+          { error: err?.message || 'Proxy request failed.' },
           502
         );
       }

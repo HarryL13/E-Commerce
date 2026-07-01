@@ -5,6 +5,7 @@ import { resolveProxyConfig } from './upstream';
 export const GEMINI_IMAGE_MODELS = new Set([
   'gemini-3.1-flash-image',
   'gemini-3.1-flash-image-preview',
+  'gemini-2.5-flash-image-preview',
   'gemini-3-pro-image-preview',
   'gemini-2.5-flash-image',
 ]);

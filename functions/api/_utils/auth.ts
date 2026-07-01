@@ -17,6 +17,10 @@ export interface Env {
   ANTHROPIC_AUTH_TOKEN?: string;
   GEMINI_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  /** Override proxy chat model for text-only tasks (default qwen3.6-flash). */
+  PROXY_TEXT_MODEL?: string;
+  /** Override proxy chat model for vision tasks (default qwen3-vl-flash). */
+  PROXY_VISION_MODEL?: string;
 }
 
 export function jsonResponse(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
