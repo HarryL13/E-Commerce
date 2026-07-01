@@ -1,4 +1,5 @@
 // Changes: Proxy model IDs — gemini-3-flash removed from gateway; use qwen3.6-flash / qwen3-vl-flash.
+// Direct Gemini image key detection (GEMINI_DIRECT_API_KEY or AIza-prefixed GEMINI_API_KEY).
 import { Env } from './auth';
 
 export type ProxyConfig = {
@@ -17,14 +18,41 @@ export const DEFAULT_PROXY_TEXT_MODEL = 'qwen3.6-flash';
 /** Default vision model on company LiteLLM gateway (analyze image, SKU with photo). */
 export const DEFAULT_PROXY_VISION_MODEL = 'qwen3-vl-flash';
 
+/** Google Generative Language API keys from AI Studio start with AIza. */
+export function isGoogleGenerativeApiKey(key: string): boolean {
+  return key.trim().startsWith('AIza');
+}
+
+/** Personal Google key for direct Gemini image calls (bypasses company proxy). */
+export function resolveDirectGeminiImageKey(env: Env): string | undefined {
+  const direct = env.GEMINI_DIRECT_API_KEY?.trim();
+  if (direct) return direct;
+
+  const gemini = env.GEMINI_API_KEY?.trim();
+  if (gemini && isGoogleGenerativeApiKey(gemini)) return gemini;
+
+  return undefined;
+}
+
+function resolveProxyAuthToken(env: Env): string | undefined {
+  const candidates = [
+    env.API_AUTH_TOKEN,
+    env.ANTHROPIC_AUTH_TOKEN,
+    env.OPENAI_API_KEY,
+    env.ANTHROPIC_API_KEY,
+    env.GEMINI_API_KEY,
+  ];
+
+  for (const candidate of candidates) {
+    const token = candidate?.trim();
+    if (token && !isGoogleGenerativeApiKey(token)) return token;
+  }
+  return undefined;
+}
+
 export function resolveProxyConfig(env: Env): ProxyConfig | DirectConfig {
   const baseUrl = (env.API_BASE_URL || env.ANTHROPIC_BASE_URL || '').replace(/\/$/, '');
-  const token =
-    env.API_AUTH_TOKEN ||
-    env.ANTHROPIC_AUTH_TOKEN ||
-    env.OPENAI_API_KEY ||
-    env.GEMINI_API_KEY ||
-    env.ANTHROPIC_API_KEY;
+  const token = resolveProxyAuthToken(env);
 
   if (baseUrl && token) {
     return { useProxy: true, baseUrl, token };

@@ -1,6 +1,6 @@
-// Changes: Image resolution selector — passes imageSize to shared upstream.
+// Changes: Gemini image gen prefers direct Google API key when configured (faster than company proxy).
 import { Env } from './auth';
-import { resolveProxyConfig } from './upstream';
+import { resolveDirectGeminiImageKey, resolveProxyConfig } from './upstream';
 
 export const GEMINI_IMAGE_MODELS = new Set([
   'gemini-3.1-flash-image',
@@ -21,17 +21,9 @@ export type ImageGenRequest = {
   prompt: string;
   aspectRatio: string;
   model: string;
-  imageSize?: string;
   referenceImage?: string;
   referenceImages?: string[];
 };
-
-const VALID_IMAGE_SIZES = new Set(['1K', '2K', '4K']);
-
-export function normalizeImageSize(imageSize?: string): string {
-  if (imageSize && VALID_IMAGE_SIZES.has(imageSize)) return imageSize;
-  return '4K';
-}
 
 function mapAspectRatioToOpenAiSize(aspectRatio: string): string {
   switch (aspectRatio) {
@@ -101,7 +93,6 @@ async function generateViaProxyImagesApi(
   body: ImageGenRequest
 ): Promise<string> {
   const size = mapAspectRatioToOpenAiSize(body.aspectRatio);
-  const imageSize = normalizeImageSize(body.imageSize);
   const payload: Record<string, unknown> = {
     model: body.model,
     prompt: body.prompt,
@@ -113,7 +104,6 @@ async function generateViaProxyImagesApi(
   if (GEMINI_IMAGE_MODELS.has(body.model)) {
     payload.extra_body = {
       image_config: {
-        image_size: imageSize,
         aspect_ratio: body.aspectRatio,
       },
     };
@@ -156,8 +146,6 @@ async function generateViaProxyGeminiNative(
   }
   parts.push({ text: body.prompt });
 
-  const imageSize = normalizeImageSize(body.imageSize);
-
   const upstream = await fetch(
     `${baseUrl}/v1beta/models/${body.model}:generateContent`,
     {
@@ -172,7 +160,6 @@ async function generateViaProxyGeminiNative(
           responseModalities: ['TEXT', 'IMAGE'],
           imageConfig: {
             aspectRatio: body.aspectRatio,
-            imageSize,
           },
         },
       }),
@@ -204,12 +191,6 @@ async function generateViaGeminiNative(
   }
   parts.push({ text: body.prompt });
 
-  const imageSize = normalizeImageSize(body.imageSize);
-  const imageConfig: Record<string, string> = {
-    aspectRatio: body.aspectRatio,
-    imageSize,
-  };
-
   const upstream = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${body.model}:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
@@ -219,7 +200,9 @@ async function generateViaGeminiNative(
         contents: [{ parts }],
         generationConfig: {
           responseModalities: ['TEXT', 'IMAGE'],
-          imageConfig,
+          imageConfig: {
+            aspectRatio: body.aspectRatio,
+          },
         },
       }),
     }
@@ -296,6 +279,14 @@ async function generateViaOpenAiNative(
 
 export async function generateImageDataUrl(env: Env, body: ImageGenRequest): Promise<string> {
   const referenceImages = collectReferenceImages(body);
+
+  if (GEMINI_IMAGE_MODELS.has(body.model)) {
+    const directKey = resolveDirectGeminiImageKey(env);
+    if (directKey) {
+      return generateViaGeminiNative(directKey, body, referenceImages);
+    }
+  }
+
   const proxy = resolveProxyConfig(env);
 
   if (proxy.useProxy) {
@@ -318,4 +309,14 @@ export async function generateImageDataUrl(env: Env, body: ImageGenRequest): Pro
   }
 
   throw { message: 'Invalid model.' };
+}
+
+function resolveAuthToken(env: Env): string | undefined {
+  return (
+    env.API_AUTH_TOKEN ||
+    env.ANTHROPIC_AUTH_TOKEN ||
+    env.OPENAI_API_KEY ||
+    env.GEMINI_API_KEY ||
+    env.ANTHROPIC_API_KEY
+  );
 }

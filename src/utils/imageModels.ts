@@ -1,5 +1,5 @@
-// Changes: Provider routing; resolveGeminiImageModel forces Gemini for multi-view etc.
-import { AspectRatio, ImageResolution, ModelType } from '../types';
+// Changes: Provider routing; resolveGeminiImageModel for multi-view and Gemini-only flows.
+import { AspectRatio, ModelType } from '../types';
 
 export type ImageProvider = 'gemini' | 'openai';
 
@@ -18,6 +18,10 @@ export function getImageProvider(model: string): ImageProvider {
   return 'gemini';
 }
 
+export function getImageGenerateEndpoint(model: string): string {
+  return getImageProvider(model) === 'openai' ? '/api/openai-generate' : '/api/gemini-generate';
+}
+
 /** Prefer Gemini image model; fall back to flash preview when GPT/non-Gemini selected. */
 export function resolveGeminiImageModel(model: string): ModelType {
   if (GEMINI_IMAGE_MODELS.has(model)) {
@@ -26,28 +30,6 @@ export function resolveGeminiImageModel(model: string): ModelType {
   return ModelType.GEMINI_31_FLASH_IMAGE;
 }
 
-export function getImageGenerateEndpoint(model: string): string {
-  return getImageProvider(model) === 'openai' ? '/api/openai-generate' : '/api/gemini-generate';
-}
-
-/** gpt-image models on OpenAI API max out around 1024px; Gemini supports 1K/2K/4K. */
-export function getResolutionsForModel(model: string): ImageResolution[] {
-  if (getImageProvider(model) === 'openai') {
-    return ['1K'];
-  }
-  return ['1K', '2K', '4K'];
-}
-
-export function normalizeImageResolution(
-  model: string,
-  resolution: ImageResolution
-): ImageResolution {
-  const allowed = getResolutionsForModel(model);
-  if (allowed.includes(resolution)) return resolution;
-  return allowed[allowed.length - 1];
-}
-
-/** gpt-image-1 supports 1024², 1024×1536, 1536×1024 (no native 2K/4K). */
 export function mapAspectRatioToOpenAiSize(aspectRatio: AspectRatio): string {
   switch (aspectRatio) {
     case '3:4':

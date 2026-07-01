@@ -7,8 +7,7 @@
 //   flow; it's no longer needed because the server holds the key. Kept as
 //   a no-op stub so existing call sites don't have to change.
 // - `generateImageFromGemini` routes to /api/gemini-generate or /api/openai-generate by model.
-// - `generateImageFromGemini` accepts optional imageResolution (1K / 2K / 4K).
-import { AspectRatio, ImageResolution, ModelType } from '../types';
+import { AspectRatio, ModelType } from '../types';
 import { getImageGenerateEndpoint } from '../utils/imageModels';
 import { apiFetch } from './authClient';
 
@@ -34,18 +33,13 @@ export const generateImageFromGemini = async (
   aspectRatio: AspectRatio,
   model: ModelType,
   referenceImage?: string,
-  referenceImages?: string[],
-  imageResolution?: ImageResolution
+  referenceImages?: string[]
 ): Promise<string> => {
   const payload: Record<string, unknown> = {
     prompt,
     aspectRatio,
     model,
   };
-
-  if (imageResolution) {
-    payload.imageSize = imageResolution;
-  }
 
   if (referenceImages && referenceImages.length > 0) {
     payload.referenceImages = referenceImages;

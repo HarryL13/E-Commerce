@@ -8,7 +8,7 @@
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
-// - Multi-View uses Gemini image models with dedicated angle prompts + required reference.
+// - Multi-View: upload reference + single Generate button (Top / Side / Zoom).
 import React, { useState, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -16,9 +16,9 @@ import { ImageGrid } from './components/ImageGrid';
 import { UploadZone } from './components/UploadZone';
 import { MultiUploadZone } from './components/MultiUploadZone';
 import { Button } from './components/Button';
-import { GeneratedImage, AspectRatio, ImageResolution, ModelType, AppTab, LogoPosition } from './types';
+import { GeneratedImage, AspectRatio, ModelType, AppTab, LogoPosition } from './types';
 import { generateImageFromGemini, ensureApiKey, analyzeImage } from './services/geminiService';
-import { normalizeImageResolution, resolveGeminiImageModel } from './utils/imageModels';
+import { resolveGeminiImageModel } from './utils/imageModels';
 import {
   MULTIVIEW_ANGLES,
   buildMultiViewPrompt,
@@ -46,7 +46,6 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 const ImageStudioApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
   const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
-  const [imageResolution, setImageResolution] = useState<ImageResolution>('4K');
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,8 +72,6 @@ const ImageStudioApp: React.FC = () => {
 
   // Controlled Prompt State for Scene Tab
   const [scenePrompt, setScenePrompt] = useState('');
-  // Controlled Prompt State for MultiView Batch
-  const [multiViewBatchPrompt, setMultiViewBatchPrompt] = useState('');
 
   // Refs for Batch Inputs
   const bgBatchInputRef = useRef<HTMLInputElement>(null);
@@ -91,7 +88,6 @@ const ImageStudioApp: React.FC = () => {
 
   const handleModelChange = (nextModel: ModelType) => {
     setModel(nextModel);
-    setImageResolution((prev) => normalizeImageResolution(nextModel, prev));
   };
 
   const handleGenerate = useCallback(async (
@@ -119,9 +115,7 @@ const ImageStudioApp: React.FC = () => {
         prompt, 
         aspectRatio, 
         targetModel, 
-        referenceImg || undefined,
-        undefined,
-        imageResolution
+        referenceImg || undefined
       );
 
       const newImage: GeneratedImage = {
@@ -131,7 +125,6 @@ const ImageStudioApp: React.FC = () => {
         timestamp: Date.now(),
         aspectRatio,
         model: targetModel,
-        imageResolution,
         tab: activeTab
       };
 
@@ -144,7 +137,7 @@ const ImageStudioApp: React.FC = () => {
       setIsGenerating(false);
       setProgressMessage(null);
     }
-  }, [model, imageResolution, activeTab]);
+  }, [model, activeTab]);
 
   const handleDelete = useCallback((id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
@@ -191,9 +184,7 @@ const ImageStudioApp: React.FC = () => {
                     fullPrompt,
                     '1:1',
                     targetModel,
-                    preview,
-                    undefined,
-                    imageResolution
+                    preview
                 );
 
                 const newImage: GeneratedImage = {
@@ -227,7 +218,7 @@ const ImageStudioApp: React.FC = () => {
   };
 
   // --- MultiView Tab Handler (Single) ---
-  const handleMultiViewGenerate = async (prompt: string, ratio: AspectRatio) => {
+  const handleMultiViewGenerate = async () => {
     if (!multiViewImage) {
       setError('Please upload a reference product image. Multi-View needs the original photo to preserve the product.');
       return;
@@ -236,6 +227,8 @@ const ImageStudioApp: React.FC = () => {
     setIsGenerating(true);
     setError(null);
     setProgressMessage("Starting Multi-View Generation...");
+
+    const ratio: AspectRatio = '1:1';
 
     try {
       const targetModel = resolveGeminiImageModel(model);
@@ -255,15 +248,13 @@ const ImageStudioApp: React.FC = () => {
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
 
-          const fullPrompt = buildMultiViewPrompt(view.key, prompt);
+          const fullPrompt = buildMultiViewPrompt(view.key);
 
           const base64Image = await generateImageFromGemini(
             fullPrompt,
             ratio,
             targetModel,
-            multiViewImage,
-            undefined,
-            imageResolution
+            multiViewImage
           );
 
           const newImage: GeneratedImage = {
@@ -273,7 +264,6 @@ const ImageStudioApp: React.FC = () => {
             timestamp: Date.now(),
             aspectRatio: ratio,
             model: targetModel,
-            imageResolution,
             tab: AppTab.MULTIVIEW
           };
 
@@ -286,7 +276,7 @@ const ImageStudioApp: React.FC = () => {
       }
 
       if (successCount === 0) {
-        throw new Error("Failed to generate any views. Try 1K/2K resolution or a clearer reference photo.");
+        throw new Error("Failed to generate any views. Try a clearer reference photo.");
       }
 
     } catch (err: any) {
@@ -299,7 +289,7 @@ const ImageStudioApp: React.FC = () => {
   };
 
   // --- MultiView Tab Handler (Batch) ---
-  const handleBatchMultiViewGenerate = async (commonPrompt: string, ratio: AspectRatio) => {
+  const handleBatchMultiViewGenerate = async () => {
      if (multiViewBatchFiles.length === 0) {
          setError("Please upload files first.");
          return;
@@ -309,6 +299,7 @@ const ImageStudioApp: React.FC = () => {
      setError(null);
      
      const targetModel = resolveGeminiImageModel(model);
+     const ratio: AspectRatio = '1:1';
 
      try {
         const canProceed = await ensureApiKey(targetModel);
@@ -323,14 +314,12 @@ const ImageStudioApp: React.FC = () => {
         for (let i = 0; i < multiViewBatchFiles.length; i++) {
             const { preview, file } = multiViewBatchFiles[i];
 
-            let productDescription = commonPrompt.trim();
-            if (!productDescription) {
-                setProgressMessage(`Analyzing Item ${i + 1}/${multiViewBatchFiles.length}...`);
-                try {
-                    productDescription = await analyzeImage(preview);
-                } catch (e) {
-                    productDescription = 'product';
-                }
+            setProgressMessage(`Analyzing Item ${i + 1}/${multiViewBatchFiles.length}...`);
+            let productDescription = 'product';
+            try {
+                productDescription = await analyzeImage(preview);
+            } catch (e) {
+                productDescription = 'product';
             }
 
             for (const [vIdx, view] of MULTIVIEW_ANGLES.entries()) {
@@ -345,9 +334,7 @@ const ImageStudioApp: React.FC = () => {
                         fullPrompt,
                         ratio,
                         targetModel,
-                        preview,
-                        undefined,
-                        imageResolution
+                        preview
                     );
 
                     const newImage: GeneratedImage = {
@@ -357,7 +344,6 @@ const ImageStudioApp: React.FC = () => {
                         timestamp: Date.now(),
                         aspectRatio: ratio,
                         model: targetModel,
-                        imageResolution,
                         tab: AppTab.MULTIVIEW
                     };
 
@@ -414,9 +400,7 @@ const ImageStudioApp: React.FC = () => {
                     prompt,
                     aspectRatio,
                     targetModel,
-                    preview,
-                    undefined,
-                    imageResolution
+                    preview
                 );
 
                 const newImage: GeneratedImage = {
@@ -502,7 +486,7 @@ const ImageStudioApp: React.FC = () => {
 
         try {
             const base64Image = await generateImageFromGemini(
-              prompts[i], '1:1', targetModel, sceneImage, undefined, imageResolution
+              prompts[i], '1:1', targetModel, sceneImage
             );
             const newImage: GeneratedImage = {
                 id: crypto.randomUUID(),
@@ -663,8 +647,7 @@ const ImageStudioApp: React.FC = () => {
       logoAspectRatio,
       model,
       undefined,
-      [productPreview, logoImage!],
-      imageResolution
+      [productPreview, logoImage!]
     );
 
     const newImage: GeneratedImage = {
@@ -986,22 +969,31 @@ const ImageStudioApp: React.FC = () => {
                             label="Product Reference (Required)"
                         />
                     </div>
-                    <div className="md:col-span-2 flex flex-col justify-end">
-                        <div className="bg-white p-6 rounded-2xl border border-zinc-200 mb-2">
+                    <div className="md:col-span-2 flex flex-col justify-end gap-4">
+                        <div className="bg-white p-6 rounded-2xl border border-zinc-200">
                         <h3 className="text-lg font-medium text-zinc-900 mb-2 flex items-center gap-2">
                             <Grid3X3 className="w-5 h-5 text-indigo-400" />
                             Multi-View Generator
                         </h3>
-                        <p className="text-zinc-500 text-sm">
+                        <p className="text-zinc-500 text-sm mb-4">
                             Upload your product photo, then generate consistent <strong>Top, Side, and Zoom</strong> views. Uses Gemini image models and preserves the exact product from your reference.
                         </p>
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
+                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
+                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Zoom Detail</span>
                         </div>
-                        <PromptBar 
-                        onGenerate={handleMultiViewGenerate} 
-                        isGenerating={isGenerating} 
-                        placeholder="Optional notes (e.g., 'ceramic mug, matte white finish')..."
-                        defaultAspectRatio="1:1" 
-                        />
+                        </div>
+                        <Button
+                            onClick={handleMultiViewGenerate}
+                            disabled={!multiViewImage || isGenerating}
+                            isLoading={isGenerating}
+                            size="lg"
+                            className="w-full"
+                        >
+                            <Wand2 className="w-5 h-5 mr-2" />
+                            Generate 3 Views
+                        </Button>
                     </div>
                 </div>
             ) : (
@@ -1066,20 +1058,22 @@ const ImageStudioApp: React.FC = () => {
                            <p className="text-zinc-500 text-sm mb-4">
                                This will generate <strong>3 views</strong> (Top, Side, Zoom) for <strong>every image</strong> in your queue.
                            </p>
-                           <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                           <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-4">
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Zoom Detail</span>
                            </div>
                         </div>
-                        <PromptBar 
-                            onGenerate={handleBatchMultiViewGenerate} 
-                            isGenerating={isGenerating} 
-                            placeholder="Optional: Common description (e.g., 'A leather shoe'). Leave empty to auto-detect."
-                            defaultAspectRatio="1:1" 
-                            value={multiViewBatchPrompt}
-                            onInputChange={setMultiViewBatchPrompt}
-                        />
+                        <Button
+                            onClick={handleBatchMultiViewGenerate}
+                            disabled={multiViewBatchFiles.length === 0 || isGenerating}
+                            isLoading={isGenerating}
+                            size="lg"
+                            className="w-full"
+                        >
+                            <Wand2 className="w-5 h-5 mr-2" />
+                            Generate All Views
+                        </Button>
                     </div>
                 </div>
             )}
@@ -1511,8 +1505,6 @@ const ImageStudioApp: React.FC = () => {
       <Header
         currentModel={model}
         onModelChange={handleModelChange}
-        currentResolution={imageResolution}
-        onResolutionChange={setImageResolution}
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />

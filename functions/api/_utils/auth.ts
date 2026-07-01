@@ -16,6 +16,8 @@ export interface Env {
   ANTHROPIC_BASE_URL?: string;
   ANTHROPIC_AUTH_TOKEN?: string;
   GEMINI_API_KEY?: string;
+  /** Personal Google key — Gemini image gen uses this directly (skips company proxy). */
+  GEMINI_DIRECT_API_KEY?: string;
   OPENAI_API_KEY?: string;
   /** Override proxy chat model for text-only tasks (default qwen3.6-flash). */
   PROXY_TEXT_MODEL?: string;

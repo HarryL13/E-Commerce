@@ -1,29 +1,18 @@
-// Changes: Resolution + model as labeled dropdown selects (clearer than tab buttons).
+// Changes: Model selector dropdown for Image Studio (resolution removed — API default).
 import React from 'react';
 import { Image, Layers, Grid3X3, Palette, Stamp } from 'lucide-react';
-import { ModelType, AppTab, ImageResolution, IMAGE_MODEL_OPTIONS, getModelLabel } from '../types';
-import { getResolutionsForModel } from '../utils/imageModels';
+import { ModelType, AppTab, IMAGE_MODEL_OPTIONS, getModelLabel } from '../types';
 
 interface HeaderProps {
   currentModel: ModelType;
   onModelChange: (model: ModelType) => void;
-  currentResolution: ImageResolution;
-  onResolutionChange: (resolution: ImageResolution) => void;
   activeTab: AppTab;
   onTabChange: (tab: AppTab) => void;
 }
 
-const RESOLUTION_LABELS: Record<ImageResolution, string> = {
-  '1K': '1K — Fast preview',
-  '2K': '2K — Balanced',
-  '4K': '4K — Ultra HD',
-};
-
 export const Header: React.FC<HeaderProps> = ({
   currentModel,
   onModelChange,
-  currentResolution,
-  onResolutionChange,
   activeTab,
   onTabChange,
 }) => {
@@ -33,11 +22,6 @@ export const Header: React.FC<HeaderProps> = ({
     { id: AppTab.SCENE, label: 'Scene Gen', icon: Palette },
     { id: AppTab.LOGO, label: 'Logo Brand', icon: Stamp },
   ];
-
-  const resolutionOptions = getResolutionsForModel(currentModel);
-  const effectiveResolution = resolutionOptions.includes(currentResolution)
-    ? currentResolution
-    : resolutionOptions[resolutionOptions.length - 1];
 
   return (
     <header className="studio-subheader">
@@ -66,43 +50,23 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
 
-        <div className="flex items-end gap-3 shrink-0 border-l border-zinc-200 pl-3">
-          <label className="flex flex-col gap-1 min-w-0">
-            <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-              Resolution
-            </span>
-            <select
-              className="studio-select"
-              value={effectiveResolution}
-              onChange={(e) => onResolutionChange(e.target.value as ImageResolution)}
-              aria-label="Image resolution"
-            >
-              {resolutionOptions.map((res) => (
-                <option key={res} value={res}>
-                  {RESOLUTION_LABELS[res]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 min-w-0 max-w-[11rem] sm:max-w-[14rem]">
-            <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-              Model
-            </span>
-            <select
-              className="studio-select font-mono truncate"
-              value={currentModel}
-              onChange={(e) => onModelChange(e.target.value as ModelType)}
-              aria-label="Image generation model"
-            >
-              {IMAGE_MODEL_OPTIONS.map((modelId) => (
-                <option key={modelId} value={modelId}>
-                  {getModelLabel(modelId)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <label className="flex flex-col gap-1 shrink-0 border-l border-zinc-200 pl-3 min-w-0 max-w-[11rem] sm:max-w-[14rem]">
+          <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+            Model
+          </span>
+          <select
+            className="studio-select font-mono truncate"
+            value={currentModel}
+            onChange={(e) => onModelChange(e.target.value as ModelType)}
+            aria-label="Image generation model"
+          >
+            {IMAGE_MODEL_OPTIONS.map((modelId) => (
+              <option key={modelId} value={modelId}>
+                {getModelLabel(modelId)}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
     </header>
   );
