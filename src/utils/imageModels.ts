@@ -1,25 +1,21 @@
-// Changes: Provider routing; resolveGeminiImageModel for multi-view and Gemini-only flows.
+// Changes: Provider routing; Gemini-only Image Studio model list.
 import { AspectRatio, ModelType } from '../types';
 
-export type ImageProvider = 'gemini' | 'openai';
-
-export const OPENAI_IMAGE_MODELS = new Set<string>([ModelType.GPT_IMAGE_2]);
+export type ImageProvider = 'gemini';
 
 export const GEMINI_IMAGE_MODELS = new Set<string>([
   ModelType.GEMINI_31_FLASH_IMAGE,
   ModelType.GEMINI_3_PRO_IMAGE_PREVIEW,
   'gemini-2.5-flash-image-preview',
+  'gemini-2.5-flash-image',
 ]);
 
-export function getImageProvider(model: string): ImageProvider {
-  if (OPENAI_IMAGE_MODELS.has(model) || model.startsWith('gpt-image')) {
-    return 'openai';
-  }
+export function getImageProvider(_model: string): ImageProvider {
   return 'gemini';
 }
 
-export function getImageGenerateEndpoint(model: string): string {
-  return getImageProvider(model) === 'openai' ? '/api/openai-generate' : '/api/gemini-generate';
+export function getImageGenerateEndpoint(_model: string): string {
+  return '/api/gemini-generate';
 }
 
 /** Prefer Gemini image model; fall back to flash preview when GPT/non-Gemini selected. */

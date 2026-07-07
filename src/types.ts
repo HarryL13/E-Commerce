@@ -1,19 +1,17 @@
-// Changes: Gemini + gpt-image-2 model IDs for Image Studio.
+// Changes: Image Studio uses Gemini image models only.
 export type AspectRatio = "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
 
 export enum ModelType {
   GEMINI_31_FLASH_IMAGE = 'gemini-3.1-flash-image-preview',
   GEMINI_3_PRO_IMAGE_PREVIEW = 'gemini-3-pro-image-preview',
-  GPT_IMAGE_2 = 'gpt-image-2',
 }
 
 /** Legacy model IDs still accepted by the generate API. */
-export const LEGACY_IMAGE_MODELS = ['gemini-2.5-flash-image'] as const;
+export const LEGACY_IMAGE_MODELS = ['gemini-2.5-flash-image', 'gpt-image-2'] as const;
 
 export const IMAGE_MODEL_OPTIONS: ModelType[] = [
   ModelType.GEMINI_31_FLASH_IMAGE,
   ModelType.GEMINI_3_PRO_IMAGE_PREVIEW,
-  ModelType.GPT_IMAGE_2,
 ];
 
 export function getModelLabel(model: ModelType | string): string {
