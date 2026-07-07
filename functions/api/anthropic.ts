@@ -1,19 +1,17 @@
-// Changes: SKU copy via proxy qwen3-vl-flash (with image) / qwen3.6-flash (text-only).
+// Changes: SKU copy via direct Google Gemini API (GEMINI_DIRECT_API_KEY).
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 import {
-  getProxyTextModel,
-  getProxyVisionModel,
-  proxyChatCompletion,
-  resolveProxyConfig,
-} from './_utils/upstream';
+  DEFAULT_GEMINI_TEXT_MODEL,
+  geminiGenerateText,
+  imageBase64ToPart,
+  requireDirectGeminiApiKey,
+} from './_utils/geminiDirect';
 
 type Body = {
   imageBase64?: string | null;
   contextText?: string;
   contextMode?: 'series' | 'template';
 };
-
-const DIRECT_MODEL = 'gemini-2.5-flash';
 
 function buildPrompt(contextMode: 'series' | 'template', contextText: string) {
   return `You are an expert Shopify product copywriter and SEO specialist.
@@ -72,85 +70,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const prompt = buildPrompt(contextMode, contextText);
-  const proxy = resolveProxyConfig(env);
+  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+
+  if (imageBase64) {
+    const imagePart = imageBase64ToPart(imageBase64);
+    if (!imagePart) {
+      return jsonResponse({ error: 'Invalid image format.' }, 400);
+    }
+    parts.push(imagePart);
+  }
+  parts.push({ text: prompt });
 
   try {
-    if (proxy.useProxy) {
-      const proxyModel = imageBase64 ? getProxyVisionModel(env) : getProxyTextModel(env);
-      const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-      if (imageBase64) {
-        content.push({ type: 'image_url', image_url: { url: imageBase64 } });
-      }
-      content.push({ type: 'text', text: prompt });
-
-      try {
-        const textBlock = await proxyChatCompletion(env, proxyModel, content, {
-          maxTokens: 4096,
-          temperature: 0.7,
-        });
-        return jsonResponse(parseModelJson(textBlock));
-      } catch (err: any) {
-        return jsonResponse(
-          { error: err?.message || 'Proxy request failed.' },
-          502
-        );
-      }
-    }
-
-    const apiKey = env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return jsonResponse(
-        { error: 'Server misconfiguration: GEMINI_API_KEY is not set.' },
-        500
-      );
-    }
-
-    const parts: any[] = [];
-    if (imageBase64) {
-      const commaIdx = imageBase64.indexOf(',');
-      const header = imageBase64.slice(0, commaIdx);
-      const data = imageBase64.slice(commaIdx + 1);
-      const mimeMatch = header.match(/data:([^;]+);base64/);
-      const mimeType = mimeMatch?.[1] || 'image/png';
-      parts.push({ inlineData: { mimeType, data } });
-    }
-    parts.push({ text: prompt });
-
-    const upstream = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${DIRECT_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096,
-            responseMimeType: 'application/json',
-          },
-        }),
-      }
-    );
-
-    const rawText = await upstream.text();
-    if (!upstream.ok) {
-      return jsonResponse(
-        { error: `Gemini upstream ${upstream.status}: ${rawText.slice(0, 500)}` },
-        502
-      );
-    }
-
-    const geminiJson = JSON.parse(rawText);
-    const textBlock: string | undefined = geminiJson?.candidates?.[0]?.content?.parts?.find(
-      (p: any) => typeof p?.text === 'string'
-    )?.text;
-
-    if (!textBlock) {
-      return jsonResponse(
-        { error: 'No text content from model.', raw: JSON.stringify(geminiJson).slice(0, 500) },
-        502
-      );
-    }
+    const apiKey = requireDirectGeminiApiKey(env);
+    const textBlock = await geminiGenerateText(apiKey, DEFAULT_GEMINI_TEXT_MODEL, parts, {
+      maxOutputTokens: 4096,
+      temperature: 0.7,
+      responseMimeType: 'application/json',
+    });
 
     try {
       return jsonResponse(parseModelJson(textBlock));
@@ -160,11 +97,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         502
       );
     }
-  } catch (err: any) {
-    return jsonResponse(
-      { error: `Upstream fetch failed: ${err?.message || String(err)}` },
-      502
-    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return jsonResponse({ error: message }, 502);
   }
 };
 

@@ -1,5 +1,4 @@
-// Changes: Proxy model IDs — gemini-3-flash removed from gateway; use qwen3.6-flash / qwen3-vl-flash.
-// Direct Gemini image key detection (GEMINI_DIRECT_API_KEY or AIza-prefixed GEMINI_API_KEY).
+// Changes: Direct Gemini API key resolution (GEMINI_DIRECT_API_KEY); proxy kept as optional fallback.
 import { Env } from './auth';
 
 export type ProxyConfig = {
@@ -23,8 +22,8 @@ export function isGoogleGenerativeApiKey(key: string): boolean {
   return key.trim().startsWith('AIza');
 }
 
-/** Personal Google key for direct Gemini image calls (bypasses company proxy). */
-export function resolveDirectGeminiImageKey(env: Env): string | undefined {
+/** Personal Google key for all direct Gemini calls (text, vision, image). */
+export function resolveDirectGeminiApiKey(env: Env): string | undefined {
   const direct = env.GEMINI_DIRECT_API_KEY?.trim();
   if (direct) return direct;
 
@@ -33,6 +32,9 @@ export function resolveDirectGeminiImageKey(env: Env): string | undefined {
 
   return undefined;
 }
+
+/** @deprecated Use resolveDirectGeminiApiKey */
+export const resolveDirectGeminiImageKey = resolveDirectGeminiApiKey;
 
 function resolveProxyAuthToken(env: Env): string | undefined {
   const candidates = [

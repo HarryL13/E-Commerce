@@ -1,6 +1,6 @@
-// Changes: Gemini image gen prefers direct Google API key when configured (faster than company proxy).
+// Changes: Gemini image gen uses direct Google API only (GEMINI_DIRECT_API_KEY).
 import { Env } from './auth';
-import { resolveDirectGeminiImageKey, resolveProxyConfig } from './upstream';
+import { resolveDirectGeminiApiKey } from './upstream';
 
 export const GEMINI_IMAGE_MODELS = new Set([
   'gemini-3.1-flash-image',
@@ -281,42 +281,26 @@ export async function generateImageDataUrl(env: Env, body: ImageGenRequest): Pro
   const referenceImages = collectReferenceImages(body);
 
   if (GEMINI_IMAGE_MODELS.has(body.model)) {
-    const directKey = resolveDirectGeminiImageKey(env);
-    if (directKey) {
-      return generateViaGeminiNative(directKey, body, referenceImages);
+    const directKey = resolveDirectGeminiApiKey(env);
+    if (!directKey) {
+      throw { message: 'GEMINI_DIRECT_API_KEY is not set.' };
     }
-  }
-
-  const proxy = resolveProxyConfig(env);
-
-  if (proxy.useProxy) {
-    if (referenceImages.length > 0 && GEMINI_IMAGE_MODELS.has(body.model)) {
-      return generateViaProxyGeminiNative(proxy.baseUrl, proxy.token, body, referenceImages);
-    }
-    return generateViaProxyImagesApi(proxy.baseUrl, proxy.token, body);
-  }
-
-  if (GEMINI_IMAGE_MODELS.has(body.model)) {
-    const apiKey = env.GEMINI_API_KEY;
-    if (!apiKey) throw { message: 'GEMINI_API_KEY is not set.' };
-    return generateViaGeminiNative(apiKey, body, referenceImages);
+    return generateViaGeminiNative(directKey, body, referenceImages);
   }
 
   if (OPENAI_IMAGE_MODELS.has(body.model)) {
-    const apiKey = env.OPENAI_API_KEY || resolveAuthToken(env);
-    if (!apiKey) throw { message: 'OPENAI_API_KEY is not set.' };
+    const proxyToken =
+      env.API_AUTH_TOKEN?.trim() ||
+      env.ANTHROPIC_AUTH_TOKEN?.trim() ||
+      env.ANTHROPIC_API_KEY?.trim();
+    const apiKey = env.OPENAI_API_KEY?.trim();
+    if (!apiKey || (proxyToken && apiKey === proxyToken)) {
+      throw {
+        message: 'Set a personal OPENAI_API_KEY for gpt-image models, or switch to a Gemini model.',
+      };
+    }
     return generateViaOpenAiNative(apiKey, body, referenceImages);
   }
 
   throw { message: 'Invalid model.' };
-}
-
-function resolveAuthToken(env: Env): string | undefined {
-  return (
-    env.API_AUTH_TOKEN ||
-    env.ANTHROPIC_AUTH_TOKEN ||
-    env.OPENAI_API_KEY ||
-    env.GEMINI_API_KEY ||
-    env.ANTHROPIC_API_KEY
-  );
 }
