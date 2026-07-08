@@ -1,4 +1,4 @@
-// Changes: Professional light theme upload zone for SKU Generator.
+// Changes: SKU upload zone — up to 10 images per product listing.
 import React, { useCallback, useRef } from 'react';
 import { UploadCloud, X } from 'lucide-react';
 
@@ -60,7 +60,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImagesSelected, imag
               )}
             </div>
           ))}
-          {imagePreviews.length < 6 && (
+          {imagePreviews.length < 10 && (
             <button
               onClick={(e) => {
                 e.preventDefault();
@@ -80,7 +80,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ onImagesSelected, imag
             <UploadCloud className="h-8 w-8 text-zinc-400 group-hover:text-indigo-600 transition-colors" />
           </div>
           <p className="text-sm font-medium text-zinc-900 mb-1">Click to upload or drag and drop</p>
-          <p className="text-xs text-zinc-500">Upload up to 6 images</p>
+          <p className="text-xs text-zinc-500">Upload up to 10 images (1 SKU gallery)</p>
         </div>
       )}
     </div>

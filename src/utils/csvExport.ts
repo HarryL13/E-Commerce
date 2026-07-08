@@ -1,3 +1,4 @@
+// Changes: Shopify CSV export with multi-image gallery rows per product.
 import Papa from 'papaparse';
 
 export interface Variant {
@@ -25,6 +26,8 @@ export interface ProductData {
   seo_title: string;
   seo_description: string;
   mainImageSrc: string;
+  /** Additional product gallery images (Shopify Image Position 2+). */
+  galleryImageSrcs?: string[];
 }
 
 export interface ExportItem {
@@ -107,6 +110,16 @@ export const exportCSV = (items: ExportItem[], filename: string = 'products') =>
       row["Variant Weight Unit"] = "kg";
 
       rows.push(row);
+    });
+
+    const gallery = product.galleryImageSrcs?.filter(Boolean) ?? [];
+    gallery.forEach((src, imgIndex) => {
+      const imageRow: Record<string, string> = {};
+      CSV_HEADERS.forEach((h) => (imageRow[h] = ''));
+      imageRow['Handle'] = product.handle;
+      imageRow['Image Src'] = src;
+      imageRow['Image Position'] = String(imgIndex + 2);
+      rows.push(imageRow);
     });
   });
 

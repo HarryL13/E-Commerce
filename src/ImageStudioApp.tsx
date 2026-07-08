@@ -34,7 +34,7 @@ import {
 } from './utils/scenePrompts';
 import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box, Stamp, Boxes } from 'lucide-react';
 import { PriceMode } from './utils/podPricing';
-import { SkuHandoff, createSkuHandoffFromImages } from './utils/skuHandoff';
+import { SkuHandoff, SkuHandoffMode, createSkuHandoffFromImages } from './utils/skuHandoff';
 
 // Helper to shuffle array for random selection
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -166,9 +166,9 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
   }, []);
 
   const handleSendToSku = useCallback(
-    (studioImages: GeneratedImage[], priceMode: PriceMode) => {
+    (studioImages: GeneratedImage[], priceMode: PriceMode, mode: SkuHandoffMode = 'single-product') => {
       if (!onSendToSku || studioImages.length === 0) return;
-      onSendToSku(createSkuHandoffFromImages(studioImages, priceMode, { autoGenerate: true }));
+      onSendToSku(createSkuHandoffFromImages(studioImages, priceMode, { autoGenerate: true, mode }));
       setSelectedImageIds(new Set());
     },
     [onSendToSku]
@@ -1581,7 +1581,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
               <div>
                 <h2 className="text-xl font-semibold text-zinc-900">History</h2>
                 <p className="text-sm text-zinc-500 mt-1">
-                  Hover a image to generate FIG-POD or FIG-NOL SKU. Select multiple for bulk SKU.
+                  Hover for single-image SKU. Select multiple → one SKU with gallery, or separate SKUs.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1589,19 +1589,37 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
                   <>
                     <Button
                       size="sm"
-                      onClick={() => handleSendToSku(selectedImages, 'pod-default')}
+                      onClick={() => handleSendToSku(selectedImages, 'pod-default', 'single-product')}
                     >
                       <Package className="w-3.5 h-3.5 mr-1.5" />
-                      Bulk FIG-POD ({selectedImages.length})
+                      FIG-POD · 1 SKU ({selectedImages.length} imgs)
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => handleSendToSku(selectedImages, 'custom')}
+                      onClick={() => handleSendToSku(selectedImages, 'custom', 'single-product')}
                     >
                       <Boxes className="w-3.5 h-3.5 mr-1.5" />
-                      Bulk FIG-NOL ({selectedImages.length})
+                      FIG-NOL · 1 SKU ({selectedImages.length} imgs)
                     </Button>
+                    {selectedImages.length > 1 && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleSendToSku(selectedImages, 'pod-default', 'bulk-products')}
+                        >
+                          {selectedImages.length}× FIG-POD
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleSendToSku(selectedImages, 'custom', 'bulk-products')}
+                        >
+                          {selectedImages.length}× FIG-NOL
+                        </Button>
+                      </>
+                    )}
                   </>
                 )}
                 {images.length > 0 && (

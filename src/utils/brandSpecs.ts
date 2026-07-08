@@ -36,7 +36,7 @@ Series: FIG-POD Print-on-Demand Collection
 SKU line: FIG-POD (sizes 4cm–10cm with standard POD pricing)
 Title format must use series name "FIG-POD" in the product title.
 
-Visual assets from Image Studio:
+Visual assets from Image Studio (${images.length} image${images.length > 1 ? 's' : ''} for this listing${images.length > 1 ? ' — first is hero, others are gallery' : ''}):
 - ${imageNotes}`,
     };
   }
@@ -49,7 +49,7 @@ Series: FIG-NOL Bulk / Wholesale Collection
 SKU line: FIG-NOL (custom sizes and prices — 大货)
 Title format must use series name "FIG-NOL" in the product title.
 
-Visual assets from Image Studio:
+Visual assets from Image Studio (${images.length} image${images.length > 1 ? 's' : ''} for this listing${images.length > 1 ? ' — first is hero, others are gallery' : ''}):
 - ${imageNotes}`,
   };
 }

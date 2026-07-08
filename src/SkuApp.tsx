@@ -2,6 +2,7 @@
 // - Server-side API proxy; unified light studio UI.
 // - Pricing modes: FIG-POD default table + FIG-NOL custom sizes/prices with per-row code.
 // - Accepts Image Studio handoff for one-click FIG-POD / FIG-NOL SKU generation.
+// - One SKU can include multiple gallery images (Shopify Image Position 2+).
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Download, Wand2, AlertCircle, Save, History, CheckCircle2, PackageSearch, Trash2, RefreshCw, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,7 +27,9 @@ import {
   customSizeRowsFromVariants,
   buildNolSku,
 } from './utils/podPricing';
-import { SkuHandoff } from './utils/skuHandoff';
+import { SkuHandoff, SkuHandoffMode, splitProductImages } from './utils/skuHandoff';
+
+const MAX_PRODUCT_IMAGES = 10;
 
 type GenerateOptions = {
   previews: string[];
@@ -35,6 +38,7 @@ type GenerateOptions = {
   contextMode: 'series' | 'template';
   customRows?: CustomSizeRow[];
   productAbbrevOverride?: string;
+  generationMode?: SkuHandoffMode;
 };
 
 interface SkuAppProps {
@@ -58,6 +62,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
   const [priceMode, setPriceMode] = useState<PriceMode>('pod-default');
   const [customSizeRows, setCustomSizeRows] = useState<CustomSizeRow[]>([createCustomSizeRow()]);
   const [productAbbrev, setProductAbbrev] = useState('');
+  const [generationMode, setGenerationMode] = useState<SkuHandoffMode>('single-product');
 
   const buildVariantsForProduct = (
     title: string,
@@ -129,7 +134,8 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     tags: [],
     seo_title: '',
     seo_description: '',
-    mainImageSrc: ''
+    mainImageSrc: '',
+    galleryImageSrcs: [],
   });
 
   const [aboutSection, setAboutSection] = useState('');
@@ -192,9 +198,9 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
 
   const handleImagesSelected = async (newFiles: File[]) => {
     let updatedFiles = [...imageFiles, ...newFiles];
-    if (updatedFiles.length > 6) {
-      setError('You can only upload up to 6 images at a time. Limiting to first 6.');
-      updatedFiles = updatedFiles.slice(0, 6);
+    if (updatedFiles.length > MAX_PRODUCT_IMAGES) {
+      setError(`You can only use up to ${MAX_PRODUCT_IMAGES} images per product. Limiting to first ${MAX_PRODUCT_IMAGES}.`);
+      updatedFiles = updatedFiles.slice(0, MAX_PRODUCT_IMAGES);
     } else {
       setError(null);
     }
@@ -229,6 +235,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     contextMode: ctxMode,
     customRows,
     productAbbrevOverride,
+    generationMode: genModeOverride,
   }: GenerateOptions) => {
     if (!ctxText && previews.length === 0) {
       setError('Please provide series/template information or an image.');
@@ -241,6 +248,8 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
       return;
     }
 
+    const genMode = genModeOverride ?? generationMode;
+
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
@@ -248,7 +257,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     const abbrev = productAbbrevOverride ?? productAbbrev;
 
     try {
-      if (previews.length > 1) {
+      if (previews.length > 1 && genMode === 'bulk-products') {
         setBulkProgress({ current: 0, total: previews.length });
 
         const newHistoryItems: ExportItem[] = [];
@@ -272,6 +281,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                 seo_title: result.seo_title || '',
                 seo_description: result.seo_description || '',
                 mainImageSrc: previews[i] || '',
+                galleryImageSrcs: [],
               },
               variants: buildVariantsForProductWithMode(
                 result.title || '',
@@ -315,7 +325,8 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
         setBulkProgress(null);
         setView('history');
       } else {
-        const fileToProcess = previews.length === 1 ? previews[0] : null;
+        const { mainImageSrc, galleryImageSrcs } = splitProductImages(previews);
+        const fileToProcess = mainImageSrc || null;
         const result = await generateProductDetails(fileToProcess, ctxText, ctxMode);
 
         setProductData((prev) => ({
@@ -329,7 +340,8 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
           tags: result.tags || [],
           seo_title: result.seo_title || '',
           seo_description: result.seo_description || '',
-          mainImageSrc: previews[0] || '',
+          mainImageSrc,
+          galleryImageSrcs,
         }));
 
         setAboutSection(result.about_section || '');
@@ -337,12 +349,17 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
           buildVariantsForProductWithMode(
             result.title || '',
             result.handle || '',
-            previews[0] || '',
+            mainImageSrc,
             mode,
             rows,
             abbrev
           )
         );
+
+        if (galleryImageSrcs.length > 0) {
+          setSuccessMsg(`Listing ready with ${1 + galleryImageSrcs.length} product images.`);
+          setTimeout(() => setSuccessMsg(null), 4000);
+        }
       }
     } catch (err: unknown) {
       console.error(err);
@@ -352,7 +369,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     } finally {
       setLoading(false);
     }
-  }, [customSizeRows, productAbbrev]);
+  }, [customSizeRows, productAbbrev, generationMode]);
 
   const handleGenerate = async () => {
     await executeGenerate({
@@ -360,8 +377,21 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
       priceMode,
       contextText,
       contextMode,
+      generationMode,
     });
   };
+
+  const removeGalleryImage = (index: number) => {
+    setProductData((prev) => ({
+      ...prev,
+      galleryImageSrcs: (prev.galleryImageSrcs ?? []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const allProductImages = [
+    ...(productData.mainImageSrc ? [productData.mainImageSrc] : []),
+    ...(productData.galleryImageSrcs ?? []),
+  ];
 
   useEffect(() => {
     if (!handoff || handoff.id === lastHandoffId.current) return;
@@ -369,14 +399,17 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
 
     setView('generator');
     setImageFiles([]);
-    setImagePreviews(handoff.images.slice(0, 6));
+    setImagePreviews(handoff.images.slice(0, MAX_PRODUCT_IMAGES));
+    setGenerationMode(handoff.mode);
     setPriceMode(handoff.priceMode);
     setContextText(handoff.contextText);
     setContextMode(handoff.contextMode);
     setStudioImportNote(
-      handoff.images.length > 1
-        ? `${handoff.images.length} images imported from Image Studio`
-        : '1 image imported from Image Studio'
+      handoff.mode === 'bulk-products'
+        ? `${handoff.images.length} images → ${handoff.images.length} separate SKUs`
+        : handoff.images.length > 1
+          ? `${handoff.images.length} images → 1 SKU with gallery`
+          : '1 image imported from Image Studio'
     );
 
     let nolRows = customSizeRows;
@@ -390,11 +423,12 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
 
     if (handoff.autoGenerate) {
       void executeGenerate({
-        previews: handoff.images.slice(0, 6),
+        previews: handoff.images.slice(0, MAX_PRODUCT_IMAGES),
         priceMode: handoff.priceMode,
         contextText: handoff.contextText,
         contextMode: handoff.contextMode,
         customRows: handoff.priceMode === 'custom' ? nolRows : undefined,
+        generationMode: handoff.mode,
       });
     }
 
@@ -523,6 +557,32 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                     imagePreviews={imagePreviews} 
                     onRemoveImage={handleRemoveImage}
                   />
+                  {imagePreviews.length > 1 && (
+                    <div className="mt-4 space-y-2">
+                      <label className="label-modern text-center block">Multiple images</label>
+                      <div className="studio-tab-group p-1 w-full">
+                        <button
+                          type="button"
+                          onClick={() => setGenerationMode('single-product')}
+                          className={`studio-tab flex-1 text-center text-xs ${generationMode === 'single-product' ? 'studio-tab-active' : ''}`}
+                        >
+                          1 SKU · gallery
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGenerationMode('bulk-products')}
+                          className={`studio-tab flex-1 text-center text-xs ${generationMode === 'bulk-products' ? 'studio-tab-active' : ''}`}
+                        >
+                          {imagePreviews.length} separate SKUs
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
+                        {generationMode === 'single-product'
+                          ? 'All images attach to one product listing (hero + gallery).'
+                          : 'Each image becomes its own product in History.'}
+                      </p>
+                    </div>
+                  )}
                   <div className="mt-6 pt-6 border-t border-zinc-200 space-y-4">
                     <label className="label-modern text-center block">Pricing</label>
                     <div className="studio-tab-group p-1 w-full">
@@ -737,12 +797,18 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        {bulkProgress ? `Generating ${bulkProgress.current} of ${bulkProgress.total}...` : 'Generating Magic...'}
+                        {bulkProgress
+                          ? `Generating ${bulkProgress.current} of ${bulkProgress.total}...`
+                          : 'Generating Magic...'}
                       </>
                     ) : (
                       <>
                         <Wand2 className="w-4 h-4 mr-2" />
-                        {imagePreviews.length > 1 ? `Bulk Generate (${imagePreviews.length})` : 'Generate Listing'}
+                        {imagePreviews.length > 1 && generationMode === 'bulk-products'
+                          ? `Bulk Generate (${imagePreviews.length} SKUs)`
+                          : imagePreviews.length > 1
+                            ? `Generate 1 SKU (${imagePreviews.length} images)`
+                            : 'Generate Listing'}
                       </>
                     )}
                   </button>
@@ -789,14 +855,40 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                   </div>
 
                   <div className="mb-6">
-                    <label className="label-modern">Main Image URL</label>
-                    <input
-                      type="text"
-                      value={productData.mainImageSrc}
-                      onChange={e => setProductData({...productData, mainImageSrc: e.target.value})}
-                      className="input-modern font-mono text-xs"
-                      placeholder="https://cdn.shopify.com/..."
-                    />
+                    <label className="label-modern">
+                      Product Images ({allProductImages.length})
+                    </label>
+                    {allProductImages.length > 0 ? (
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {allProductImages.map((src, index) => (
+                          <div key={`${src.slice(0, 24)}-${index}`} className="relative group/gallery">
+                            <img
+                              src={src}
+                              alt={index === 0 ? 'Hero image' : `Gallery ${index}`}
+                              className="w-20 h-20 object-cover rounded-xl border border-zinc-200 shadow-sm"
+                            />
+                            <span className="absolute top-1 left-1 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-black/60 text-white">
+                              {index === 0 ? 'Hero' : index + 1}
+                            </span>
+                            {index > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => removeGalleryImage(index - 1)}
+                                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover/gallery:opacity-100 transition-opacity"
+                                title="Remove gallery image"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-zinc-500 mt-2">Generate a listing to attach product images.</p>
+                    )}
+                    <p className="text-[11px] text-slate-500 mt-2">
+                      Hero = Shopify Image Position 1. Additional images export as gallery rows.
+                    </p>
                   </div>
 
                   <div className="mb-6 h-[500px]">
@@ -897,6 +989,11 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-700 uppercase tracking-wider border border-zinc-200">
                             {item.variants.length} Variants
                           </span>
+                          {(1 + (item.product.galleryImageSrcs?.length ?? 0)) > 1 && (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 uppercase tracking-wider border border-emerald-200">
+                              {1 + (item.product.galleryImageSrcs?.length ?? 0)} Images
+                            </span>
+                          )}
                           {item.product.type && (
                             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 uppercase tracking-wider border border-indigo-500/20">
                               {item.product.type}
@@ -907,7 +1004,16 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                       <div className="flex-shrink-0 py-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-2">
                         <button
                           onClick={() => {
-                            setProductData(item.product);
+                            setProductData({
+                              ...item.product,
+                              galleryImageSrcs: item.product.galleryImageSrcs ?? [],
+                            });
+                            setImagePreviews([
+                              ...(item.product.mainImageSrc ? [item.product.mainImageSrc] : []),
+                              ...(item.product.galleryImageSrcs ?? []),
+                            ]);
+                            setImageFiles([]);
+                            setGenerationMode('single-product');
                             setVariants(item.variants);
                             if (isPodVariantSet(item.variants)) {
                               setPriceMode('pod-default');
