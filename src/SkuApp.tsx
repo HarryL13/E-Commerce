@@ -1,7 +1,8 @@
 // Changes:
 // - Server-side API proxy; unified light studio UI.
 // - Pricing modes: FIG-POD default table + FIG-NOL custom sizes/prices with per-row code.
-import React, { useState, useEffect } from 'react';
+// - Accepts Image Studio handoff for one-click FIG-POD / FIG-NOL SKU generation.
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Download, Wand2, AlertCircle, Save, History, CheckCircle2, PackageSearch, Trash2, RefreshCw, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ImageUpload } from './components/ImageUpload';
@@ -25,8 +26,23 @@ import {
   customSizeRowsFromVariants,
   buildNolSku,
 } from './utils/podPricing';
+import { SkuHandoff } from './utils/skuHandoff';
 
-export default function SkuApp() {
+type GenerateOptions = {
+  previews: string[];
+  priceMode: PriceMode;
+  contextText: string;
+  contextMode: 'series' | 'template';
+  customRows?: CustomSizeRow[];
+  productAbbrevOverride?: string;
+};
+
+interface SkuAppProps {
+  handoff?: SkuHandoff | null;
+  onHandoffConsumed?: () => void;
+}
+
+export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProps) {
   const [view, setView] = useState<'generator' | 'history'>('generator');
   const [history, setHistory] = useState<ExportItem[]>([]);
 
@@ -118,6 +134,22 @@ export default function SkuApp() {
 
   const [aboutSection, setAboutSection] = useState('');
   const [variants, setVariants] = useState<Variant[]>([]);
+  const [studioImportNote, setStudioImportNote] = useState<string | null>(null);
+  const lastHandoffId = useRef<string | null>(null);
+
+  const buildVariantsForProductWithMode = (
+    title: string,
+    handle: string,
+    imageSrc: string,
+    mode: PriceMode,
+    rows: CustomSizeRow[],
+    abbrev: string
+  ): Variant[] => {
+    if (mode === 'pod-default') {
+      return buildPodVariants(abbrev.trim() || undefined, imageSrc);
+    }
+    return buildNolVariantsFromRows(rows, imageSrc);
+  };
 
   useEffect(() => {
     const savedHistory = localStorage.getItem('productHistory');
@@ -190,13 +222,21 @@ export default function SkuApp() {
     setImagePreviews(newPreviews);
   };
 
-  const handleGenerate = async () => {
-    if (!contextText && imageFiles.length === 0) {
+  const executeGenerate = useCallback(async ({
+    previews,
+    priceMode: mode,
+    contextText: ctxText,
+    contextMode: ctxMode,
+    customRows,
+    productAbbrevOverride,
+  }: GenerateOptions) => {
+    if (!ctxText && previews.length === 0) {
       setError('Please provide series/template information or an image.');
       return;
     }
 
-    if (priceMode === 'custom' && !customSizeRows.some((r) => r.size.trim())) {
+    const rows = customRows ?? customSizeRows;
+    if (mode === 'custom' && !rows.some((r) => r.size.trim())) {
       setError('Add at least one size for custom pricing.');
       return;
     }
@@ -205,20 +245,21 @@ export default function SkuApp() {
     setError(null);
     setSuccessMsg(null);
 
+    const abbrev = productAbbrevOverride ?? productAbbrev;
+
     try {
-      if (imageFiles.length > 1) {
-        // Bulk generation (Sequential to avoid rate limits)
-        setBulkProgress({ current: 0, total: imageFiles.length });
-        
+      if (previews.length > 1) {
+        setBulkProgress({ current: 0, total: previews.length });
+
         const newHistoryItems: ExportItem[] = [];
         let completed = 0;
-        
-        for (let i = 0; i < imageFiles.length; i++) {
+
+        for (let i = 0; i < previews.length; i++) {
           try {
-            const result = await generateProductDetails(imagePreviews[i], contextText, contextMode);
+            const result = await generateProductDetails(previews[i], ctxText, ctxMode);
             completed++;
-            setBulkProgress({ current: completed, total: imageFiles.length });
-            
+            setBulkProgress({ current: completed, total: previews.length });
+
             newHistoryItems.push({
               product: {
                 title: result.title || '',
@@ -230,56 +271,54 @@ export default function SkuApp() {
                 tags: result.tags || [],
                 seo_title: result.seo_title || '',
                 seo_description: result.seo_description || '',
-                mainImageSrc: imagePreviews[i] || '',
+                mainImageSrc: previews[i] || '',
               },
-              variants: buildVariantsForProduct(
+              variants: buildVariantsForProductWithMode(
                 result.title || '',
                 result.handle || '',
-                imagePreviews[i] || ''
+                previews[i] || '',
+                mode,
+                rows,
+                abbrev
               ),
             });
-            
-            // Wait a short time between requests to avoid rate limits
-            if (i < imageFiles.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
+
+            if (i < previews.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
             }
           } catch (err) {
             completed++;
-            setBulkProgress({ current: completed, total: imageFiles.length });
-            console.error("Failed to generate for a file", err);
+            setBulkProgress({ current: completed, total: previews.length });
+            console.error('Failed to generate for a file', err);
           }
         }
-        
+
         if (newHistoryItems.length > 0) {
-          const updatedHistory = [...history, ...newHistoryItems];
-          setHistory(updatedHistory);
-          
-          try {
-            localStorage.setItem('productHistory', JSON.stringify(updatedHistory));
-          } catch (e) {
-            console.error("Failed to save to localStorage, might be full", e);
-            setError("Products generated, but could not save to local storage (quota exceeded).");
-          }
-          
+          setHistory((prev) => {
+            const updatedHistory = [...prev, ...newHistoryItems];
+            try {
+              localStorage.setItem('productHistory', JSON.stringify(updatedHistory));
+            } catch (e) {
+              console.error('Failed to save to localStorage, might be full', e);
+              setError('Products generated, but could not save to local storage (quota exceeded).');
+            }
+            return updatedHistory;
+          });
+
           setSuccessMsg(`Successfully generated and saved ${newHistoryItems.length} products to history!`);
         } else {
           setError('Failed to generate products.');
         }
-        
+
         setImageFiles([]);
         setImagePreviews([]);
         setBulkProgress(null);
         setView('history');
       } else {
-        // Single generation
-        const fileToProcess = imagePreviews.length === 1 ? imagePreviews[0] : null;
-        const result = await generateProductDetails(
-          fileToProcess,
-          contextText,
-          contextMode
-        );
+        const fileToProcess = previews.length === 1 ? previews[0] : null;
+        const result = await generateProductDetails(fileToProcess, ctxText, ctxMode);
 
-        setProductData(prev => ({
+        setProductData((prev) => ({
           ...prev,
           title: result.title || '',
           handle: result.handle || '',
@@ -290,26 +329,77 @@ export default function SkuApp() {
           tags: result.tags || [],
           seo_title: result.seo_title || '',
           seo_description: result.seo_description || '',
-          mainImageSrc: imagePreviews[0] || ''
+          mainImageSrc: previews[0] || '',
         }));
-        
+
         setAboutSection(result.about_section || '');
         setVariants(
-          buildVariantsForProduct(
+          buildVariantsForProductWithMode(
             result.title || '',
             result.handle || '',
-            imagePreviews[0] || ''
+            previews[0] || '',
+            mode,
+            rows,
+            abbrev
           )
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.message || 'Failed to generate content.');
+      const message = err instanceof Error ? err.message : 'Failed to generate content.';
+      setError(message);
       setBulkProgress(null);
     } finally {
       setLoading(false);
     }
+  }, [customSizeRows, productAbbrev]);
+
+  const handleGenerate = async () => {
+    await executeGenerate({
+      previews: imagePreviews,
+      priceMode,
+      contextText,
+      contextMode,
+    });
   };
+
+  useEffect(() => {
+    if (!handoff || handoff.id === lastHandoffId.current) return;
+    lastHandoffId.current = handoff.id;
+
+    setView('generator');
+    setImageFiles([]);
+    setImagePreviews(handoff.images.slice(0, 6));
+    setPriceMode(handoff.priceMode);
+    setContextText(handoff.contextText);
+    setContextMode(handoff.contextMode);
+    setStudioImportNote(
+      handoff.images.length > 1
+        ? `${handoff.images.length} images imported from Image Studio`
+        : '1 image imported from Image Studio'
+    );
+
+    let nolRows = customSizeRows;
+    if (handoff.priceMode === 'custom') {
+      nolRows = POD_SIZES.map((size) => ({
+        ...createCustomSizeRow(POD_SIZE_PRICES[size], ''),
+        size,
+      }));
+      setCustomSizeRows(nolRows);
+    }
+
+    if (handoff.autoGenerate) {
+      void executeGenerate({
+        previews: handoff.images.slice(0, 6),
+        priceMode: handoff.priceMode,
+        contextText: handoff.contextText,
+        contextMode: handoff.contextMode,
+        customRows: handoff.priceMode === 'custom' ? nolRows : undefined,
+      });
+    }
+
+    onHandoffConsumed?.();
+  }, [handoff, executeGenerate, onHandoffConsumed]);
 
   const handleExportSingle = () => {
     if (!productData.title) {
@@ -400,6 +490,16 @@ export default function SkuApp() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {studioImportNote && (
+          <div className="mb-6 bg-indigo-50 border border-indigo-200 p-4 rounded-2xl flex items-start gap-3">
+            <PackageSearch className="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-indigo-900">{studioImportNote}</p>
+              <p className="text-xs text-indigo-700/80 mt-1">Brand context and pricing mode were applied from Image Studio.</p>
+            </div>
+          </div>
+        )}
 
         <AnimatePresence mode="wait">
           {view === 'generator' ? (
@@ -628,7 +728,7 @@ export default function SkuApp() {
 
                   <button
                     onClick={handleGenerate}
-                    disabled={loading || (imageFiles.length === 0 && !contextText)}
+                    disabled={loading || (imagePreviews.length === 0 && !contextText)}
                     className="w-full flex justify-center items-center px-5 py-3 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-lg shadow-indigo-500/20"
                   >
                     {loading ? (
@@ -642,7 +742,7 @@ export default function SkuApp() {
                     ) : (
                       <>
                         <Wand2 className="w-4 h-4 mr-2" />
-                        {imageFiles.length > 1 ? `Bulk Generate (${imageFiles.length})` : 'Generate Listing'}
+                        {imagePreviews.length > 1 ? `Bulk Generate (${imagePreviews.length})` : 'Generate Listing'}
                       </>
                     )}
                   </button>

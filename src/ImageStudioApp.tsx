@@ -9,6 +9,7 @@
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
 // - Multi-View: upload reference + single Generate button (Top / Side / Zoom).
+// - Image Studio History: one-click FIG-POD / FIG-NOL SKU handoff to SKU Generator.
 import React, { useState, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -31,7 +32,9 @@ import {
   buildSceneSmartPrompts,
   getSceneSmartBatchTemplate,
 } from './utils/scenePrompts';
-import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box, Stamp } from 'lucide-react';
+import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box, Stamp, Boxes } from 'lucide-react';
+import { PriceMode } from './utils/podPricing';
+import { SkuHandoff, createSkuHandoffFromImages } from './utils/skuHandoff';
 
 // Helper to shuffle array for random selection
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -43,10 +46,15 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return newArray;
 };
 
-const ImageStudioApp: React.FC = () => {
+interface ImageStudioAppProps {
+  onSendToSku?: (handoff: SkuHandoff) => void;
+}
+
+const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
   const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
   const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progressMessage, setProgressMessage] = useState<string | null>(null);
@@ -141,7 +149,32 @@ const ImageStudioApp: React.FC = () => {
 
   const handleDelete = useCallback((id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
+    setSelectedImageIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
+
+  const toggleImageSelection = useCallback((id: string) => {
+    setSelectedImageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleSendToSku = useCallback(
+    (studioImages: GeneratedImage[], priceMode: PriceMode) => {
+      if (!onSendToSku || studioImages.length === 0) return;
+      onSendToSku(createSkuHandoffFromImages(studioImages, priceMode, { autoGenerate: true }));
+      setSelectedImageIds(new Set());
+    },
+    [onSendToSku]
+  );
+
+  const selectedImages = images.filter((img) => selectedImageIds.has(img.id));
 
   // --- Background Tab Handlers ---
   const handleBgGenerate = async (color: string, promptDetails: string) => {
@@ -1544,17 +1577,47 @@ const ImageStudioApp: React.FC = () => {
 
         {/* History / Gallery */}
         <div className="border-t border-zinc-200 pt-12">
-          <div className="flex items-center justify-between mb-8">
-              <h2 className="text-xl font-semibold text-zinc-900 flex items-center gap-2">
-                History
-              </h2>
-              {images.length > 0 && (
-                  <Button variant="ghost" size="sm" onClick={() => setImages([])} className="text-slate-500 hover:text-red-500">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              <div>
+                <h2 className="text-xl font-semibold text-zinc-900">History</h2>
+                <p className="text-sm text-zinc-500 mt-1">
+                  Hover a image to generate FIG-POD or FIG-NOL SKU. Select multiple for bulk SKU.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedImages.length > 0 && onSendToSku && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => handleSendToSku(selectedImages, 'pod-default')}
+                    >
+                      <Package className="w-3.5 h-3.5 mr-1.5" />
+                      Bulk FIG-POD ({selectedImages.length})
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleSendToSku(selectedImages, 'custom')}
+                    >
+                      <Boxes className="w-3.5 h-3.5 mr-1.5" />
+                      Bulk FIG-NOL ({selectedImages.length})
+                    </Button>
+                  </>
+                )}
+                {images.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => { setImages([]); setSelectedImageIds(new Set()); }} className="text-slate-500 hover:text-red-500">
                       <Trash2 className="w-4 h-4 mr-2" /> Clear All
                   </Button>
-              )}
+                )}
+              </div>
           </div>
-          <ImageGrid images={images} onDelete={handleDelete} />
+          <ImageGrid
+            images={images}
+            onDelete={handleDelete}
+            selectedIds={selectedImageIds}
+            onToggleSelect={onSendToSku ? toggleImageSelection : undefined}
+            onSendToSku={onSendToSku ? handleSendToSku : undefined}
+          />
         </div>
         
       </main>

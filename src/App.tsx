@@ -1,13 +1,20 @@
-// Changes: Professional light studio shell — shared header and module switcher.
+// Changes: Image Studio ↔ SKU Generator handoff; keep both modules mounted to preserve gallery state.
 import React, { useState } from 'react';
 import SkuApp from './SkuApp';
 import ImageStudioApp from './ImageStudioApp';
 import { Sparkles, Image, Package } from 'lucide-react';
+import { SkuHandoff } from './utils/skuHandoff';
 
 type Module = 'sku' | 'studio';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<Module>('sku');
+  const [skuHandoff, setSkuHandoff] = useState<SkuHandoff | null>(null);
+
+  const sendToSku = (handoff: SkuHandoff) => {
+    setSkuHandoff(handoff);
+    setActiveModule('sku');
+  };
 
   return (
     <div className="studio-root min-h-screen">
@@ -41,7 +48,12 @@ export default function App() {
         </div>
       </header>
 
-      {activeModule === 'sku' ? <SkuApp /> : <ImageStudioApp />}
+      <div className={activeModule === 'sku' ? '' : 'hidden'}>
+        <SkuApp handoff={skuHandoff} onHandoffConsumed={() => setSkuHandoff(null)} />
+      </div>
+      <div className={activeModule === 'studio' ? '' : 'hidden'}>
+        <ImageStudioApp onSendToSku={sendToSku} />
+      </div>
     </div>
   );
 }
