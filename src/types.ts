@@ -40,6 +40,10 @@ export interface GeneratedImage {
   aspectRatio: AspectRatio;
   model: ModelType | string;
   tab?: AppTab;
+  /** POD or 大货 — set when linked to a SKU */
+  skuLine?: 'pod' | 'bulk';
+  linkedHandle?: string;
+  fileName?: string;
 }
 
 export interface GenerationConfig {

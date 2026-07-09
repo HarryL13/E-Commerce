@@ -1,7 +1,7 @@
-// Changes: Gemini image generation — default API resolution (no imageSize param).
+// Changes: Gemini image generation — returns mode metadata for proxy text fallback.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 import {
-  generateImageDataUrl,
+  generateImageResult,
   SUPPORTED_IMAGE_MODELS,
 } from './_utils/imageGeneration';
 
@@ -11,6 +11,8 @@ type Body = {
   model?: string;
   referenceImage?: string;
   referenceImages?: string[];
+  productDescription?: string;
+  preferProxy?: boolean;
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -24,7 +26,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: 'Invalid JSON body.' }, 400);
   }
 
-  const { prompt, aspectRatio, model, referenceImage, referenceImages } = body;
+  const { prompt, aspectRatio, model, referenceImage, referenceImages, productDescription, preferProxy } = body;
   if (typeof prompt !== 'string' || prompt.length === 0) {
     return jsonResponse({ error: 'Missing prompt.' }, 400);
   }
@@ -36,14 +38,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   try {
-    const image = await generateImageDataUrl(env, {
+    const result = await generateImageResult(env, {
       prompt,
       aspectRatio,
       model,
       referenceImage,
       referenceImages,
+      productDescription,
+      preferProxy,
     });
-    return jsonResponse({ image });
+    return jsonResponse({ image: result.image, mode: result.mode });
   } catch (err: any) {
     return jsonResponse(
       {

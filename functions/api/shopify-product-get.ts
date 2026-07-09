@@ -1,26 +1,28 @@
-// Changes: Product image analysis — direct Gemini with proxy vision fallback (no VPN required).
+// Changes: Fetch single Shopify product for Product Optimizer editor.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
-import { analyzeProductForImageGen } from './_utils/upstream';
+import { getShopifyProduct } from './_utils/shopifyCatalog';
+
+type Body = { productId?: number };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const denied = requireAuth(request, env);
   if (denied) return denied;
 
-  let body: { base64Image?: string };
+  let body: Body;
   try {
     body = await request.json();
   } catch {
     return jsonResponse({ error: 'Invalid JSON body.' }, 400);
   }
 
-  const base64Image = body?.base64Image;
-  if (typeof base64Image !== 'string') {
-    return jsonResponse({ error: 'Missing base64Image.' }, 400);
+  const productId = Number(body.productId);
+  if (!productId || Number.isNaN(productId)) {
+    return jsonResponse({ error: 'Missing or invalid productId.' }, 400);
   }
 
   try {
-    const text = await analyzeProductForImageGen(env, base64Image);
-    return jsonResponse({ text: text || 'object' });
+    const product = await getShopifyProduct(env, productId);
+    return jsonResponse({ product });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return jsonResponse({ error: message }, 502);

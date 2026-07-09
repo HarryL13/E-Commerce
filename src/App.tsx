@@ -1,19 +1,27 @@
-// Changes: Image Studio ↔ SKU Generator handoff; keep both modules mounted to preserve gallery state.
+// Changes: Image Studio ↔ Optimizer handoff; shared history; Optimizer module.
 import React, { useState } from 'react';
 import SkuApp from './SkuApp';
 import ImageStudioApp from './ImageStudioApp';
-import { Sparkles, Image, Package } from 'lucide-react';
+import ProductOptimizerApp from './ProductOptimizerApp';
+import { Sparkles, Image, Package, Search } from 'lucide-react';
 import { SkuHandoff } from './utils/skuHandoff';
+import { OptimizerHandoff } from './utils/optimizerHandoff';
 
-type Module = 'sku' | 'studio';
+type Module = 'sku' | 'studio' | 'optimizer';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<Module>('sku');
   const [skuHandoff, setSkuHandoff] = useState<SkuHandoff | null>(null);
+  const [optimizerHandoff, setOptimizerHandoff] = useState<OptimizerHandoff | null>(null);
 
   const sendToSku = (handoff: SkuHandoff) => {
     setSkuHandoff(handoff);
     setActiveModule('sku');
+  };
+
+  const sendToOptimizer = (handoff: OptimizerHandoff) => {
+    setOptimizerHandoff(handoff);
+    setActiveModule('optimizer');
   };
 
   return (
@@ -44,6 +52,13 @@ export default function App() {
               <Image className="w-3.5 h-3.5" />
               Image Studio
             </button>
+            <button
+              onClick={() => setActiveModule('optimizer')}
+              className={`studio-tab flex items-center gap-1.5 ${activeModule === 'optimizer' ? 'studio-tab-active' : ''}`}
+            >
+              <Search className="w-3.5 h-3.5" />
+              Optimizer
+            </button>
           </nav>
         </div>
       </header>
@@ -52,7 +67,13 @@ export default function App() {
         <SkuApp handoff={skuHandoff} onHandoffConsumed={() => setSkuHandoff(null)} />
       </div>
       <div className={activeModule === 'studio' ? '' : 'hidden'}>
-        <ImageStudioApp onSendToSku={sendToSku} />
+        <ImageStudioApp onSendToSku={sendToSku} onSendToOptimizer={sendToOptimizer} />
+      </div>
+      <div className={activeModule === 'optimizer' ? '' : 'hidden'}>
+        <ProductOptimizerApp
+          handoff={optimizerHandoff}
+          onHandoffConsumed={() => setOptimizerHandoff(null)}
+        />
       </div>
     </div>
   );

@@ -1,5 +1,10 @@
-// Changes: Direct Gemini API key resolution (GEMINI_DIRECT_API_KEY); proxy kept as optional fallback.
+// Changes: Shared product image analysis with direct Gemini + proxy vision fallback.
 import { Env } from './auth';
+import {
+  DEFAULT_GEMINI_TEXT_MODEL,
+  geminiGenerateText,
+  imageBase64ToPart,
+} from './geminiDirect';
 
 export type ProxyConfig = {
   useProxy: true;
@@ -16,6 +21,12 @@ export const DEFAULT_PROXY_TEXT_MODEL = 'qwen3.6-flash';
 
 /** Default vision model on company LiteLLM gateway (analyze image, SKU with photo). */
 export const DEFAULT_PROXY_VISION_MODEL = 'qwen3-vl-flash';
+
+export const PRODUCT_ANALYZE_PROMPT =
+  'Identify the main product in this image for e-commerce photography. Output ONLY a short descriptor: product name plus key visual traits (material, color, finish, style). Examples: "matte black ceramic vase", "pink vinyl action figure", "brushed silver watch". No full sentences.';
+
+const ANALYZE_TIMEOUT_MS = 25_000;
+const PROXY_CHAT_TIMEOUT_MS = 45_000;
 
 /** Google Generative Language API keys from AI Studio start with AIza. */
 export function isGoogleGenerativeApiKey(key: string): boolean {
@@ -84,26 +95,41 @@ export async function proxyChatCompletion(
   env: Env,
   model: string,
   content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>,
-  options: { maxTokens?: number; temperature?: number } = {}
+  options: { maxTokens?: number; temperature?: number; timeoutMs?: number } = {}
 ): Promise<string> {
   const proxy = resolveProxyConfig(env);
   if (!proxy.useProxy) {
     throw new Error('Proxy is not configured.');
   }
 
-  const upstream = await fetch(`${proxy.baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${proxy.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content }],
-      max_tokens: options.maxTokens ?? 4096,
-      temperature: options.temperature ?? 0.7,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? PROXY_CHAT_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${proxy.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${proxy.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content }],
+        max_tokens: options.maxTokens ?? 4096,
+        temperature: options.temperature ?? 0.7,
+      }),
+    });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Proxy chat timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   const raw = await upstream.text();
   if (!upstream.ok) {
@@ -116,4 +142,51 @@ export async function proxyChatCompletion(
     throw new Error(`No text content from model. Raw: ${raw.slice(0, 500)}`);
   }
   return text;
+}
+
+function toDataUrl(base64Image: string): string {
+  if (base64Image.startsWith('data:')) return base64Image;
+  return `data:image/png;base64,${base64Image}`;
+}
+
+/** Analyze a product photo — direct Gemini first, then proxy vision (works without VPN). */
+export async function analyzeProductForImageGen(env: Env, base64Image: string): Promise<string> {
+  const directKey = resolveDirectGeminiApiKey(env);
+  const imagePart = imageBase64ToPart(base64Image);
+
+  if (directKey && imagePart) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
+      try {
+        const text = await geminiGenerateText(
+          directKey,
+          DEFAULT_GEMINI_TEXT_MODEL,
+          [imagePart, { text: PRODUCT_ANALYZE_PROMPT }],
+          { maxOutputTokens: 128, temperature: 0.2 }
+        );
+        if (text?.trim()) return text.trim();
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      // fall through to proxy
+    }
+  }
+
+  const proxy = resolveProxyConfig(env);
+  if (proxy.useProxy) {
+    const text = await proxyChatCompletion(
+      env,
+      getProxyVisionModel(env),
+      [
+        { type: 'text', text: PRODUCT_ANALYZE_PROMPT },
+        { type: 'image_url', image_url: { url: toDataUrl(base64Image) } },
+      ],
+      { maxTokens: 128, temperature: 0.2, timeoutMs: ANALYZE_TIMEOUT_MS }
+    );
+    if (text?.trim()) return text.trim();
+  }
+
+  return 'product';
 }

@@ -1,6 +1,15 @@
-// Changes: Gemini image gen uses direct Google API only (GEMINI_DIRECT_API_KEY).
+// Changes: Gemini image gen — direct + proxy; text-based proxy fallback when reference API unavailable.
 import { Env } from './auth';
-import { resolveDirectGeminiApiKey } from './upstream';
+import {
+  analyzeProductForImageGen,
+  resolveDirectGeminiApiKey,
+  resolveProxyConfig,
+} from './upstream';
+
+export type ImageGenResult = {
+  image: string;
+  mode?: 'direct-reference' | 'proxy-reference' | 'proxy-text';
+};
 
 export const GEMINI_IMAGE_MODELS = new Set([
   'gemini-3.1-flash-image',
@@ -23,7 +32,67 @@ export type ImageGenRequest = {
   model: string;
   referenceImage?: string;
   referenceImages?: string[];
+  /** Pre-analyzed product descriptor — used for local proxy fallback. */
+  productDescription?: string;
+  /** Skip slow direct Google calls; use company proxy (recommended locally). */
+  preferProxy?: boolean;
 };
+
+const DIRECT_GEMINI_TIMEOUT_MS = 45_000;
+const DIRECT_GEMINI_REFERENCE_TIMEOUT_MS = 120_000;
+const PROXY_GEMINI_TIMEOUT_MS = 90_000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  label: string
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error && err.name === 'AbortError'
+        ? `${label} timed out after ${Math.round(timeoutMs / 1000)}s`
+        : `${label} failed: ${err instanceof Error ? err.message : 'network error'}`;
+    throw { message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function formatUpstreamError(prefix: string, err: unknown): { message: string; raw?: string } {
+  if (err && typeof err === 'object' && 'message' in err) {
+    const e = err as { message?: string; raw?: string };
+    return { message: `${prefix}: ${e.message || 'unknown error'}`, raw: e.raw };
+  }
+  return { message: `${prefix}: ${String(err)}` };
+}
+
+function enrichPromptWithProduct(prompt: string, productDescription?: string): string {
+  const desc = productDescription?.trim();
+  if (!desc) return prompt;
+  return `${prompt}
+
+Exact product to photograph — match shape, colors, materials, logos, and proportions: ${desc}`;
+}
+
+async function generateViaProxyImagesWithDescription(
+  env: Env,
+  body: ImageGenRequest,
+  productDescription?: string
+): Promise<string> {
+  const proxy = resolveProxyConfig(env);
+  if (!proxy.useProxy) {
+    throw { message: 'Proxy is not configured (set API_BASE_URL + API_AUTH_TOKEN).' };
+  }
+  return generateViaProxyImagesApi(proxy.baseUrl, proxy.token, {
+    ...body,
+    prompt: enrichPromptWithProduct(body.prompt, productDescription),
+  });
+}
 
 function mapAspectRatioToOpenAiSize(aspectRatio: string): string {
   switch (aspectRatio) {
@@ -109,14 +178,19 @@ async function generateViaProxyImagesApi(
     };
   }
 
-  const upstream = await fetch(`${baseUrl}/v1/images/generations`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  const upstream = await fetchWithTimeout(
+    `${baseUrl}/v1/images/generations`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+    PROXY_GEMINI_TIMEOUT_MS,
+    'Proxy images API'
+  );
 
   const raw = await upstream.text();
   if (!upstream.ok) {
@@ -146,7 +220,7 @@ async function generateViaProxyGeminiNative(
   }
   parts.push({ text: body.prompt });
 
-  const upstream = await fetch(
+  const upstream = await fetchWithTimeout(
     `${baseUrl}/v1beta/models/${body.model}:generateContent`,
     {
       method: 'POST',
@@ -163,7 +237,9 @@ async function generateViaProxyGeminiNative(
           },
         },
       }),
-    }
+    },
+    PROXY_GEMINI_TIMEOUT_MS,
+    'Proxy Gemini'
   );
 
   const raw = await upstream.text();
@@ -191,7 +267,10 @@ async function generateViaGeminiNative(
   }
   parts.push({ text: body.prompt });
 
-  const upstream = await fetch(
+  const timeoutMs =
+    referenceImages.length > 0 ? DIRECT_GEMINI_REFERENCE_TIMEOUT_MS : DIRECT_GEMINI_TIMEOUT_MS;
+
+  const upstream = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${body.model}:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
       method: 'POST',
@@ -205,7 +284,9 @@ async function generateViaGeminiNative(
           },
         },
       }),
-    }
+    },
+    timeoutMs,
+    'Direct Gemini API'
   );
 
   const raw = await upstream.text();
@@ -277,15 +358,85 @@ async function generateViaOpenAiNative(
   throw { message: 'No image data in OpenAI response.', raw: raw.slice(0, 500) };
 }
 
-export async function generateImageDataUrl(env: Env, body: ImageGenRequest): Promise<string> {
+export async function generateImageResult(env: Env, body: ImageGenRequest): Promise<ImageGenResult> {
   const referenceImages = collectReferenceImages(body);
+  const errors: string[] = [];
 
   if (GEMINI_IMAGE_MODELS.has(body.model)) {
     const directKey = resolveDirectGeminiApiKey(env);
-    if (!directKey) {
-      throw { message: 'GEMINI_DIRECT_API_KEY is not set.' };
+    const proxy = resolveProxyConfig(env);
+
+    if (body.preferProxy && proxy.useProxy) {
+      try {
+        const image = await generateViaProxyImagesWithDescription(
+          env,
+          body,
+          body.productDescription
+        );
+        return { image, mode: 'proxy-text' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Proxy images (text mode)', err).message);
+      }
     }
-    return generateViaGeminiNative(directKey, body, referenceImages);
+
+    if (!body.preferProxy && directKey && referenceImages.length > 0) {
+      try {
+        const image = await generateViaGeminiNative(directKey, body, referenceImages);
+        return { image, mode: 'direct-reference' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Direct Gemini', err).message);
+      }
+    } else if (!body.preferProxy && directKey && referenceImages.length === 0) {
+      try {
+        const image = await generateViaGeminiNative(directKey, body, referenceImages);
+        return { image, mode: 'direct-reference' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Direct Gemini', err).message);
+      }
+    } else if (!directKey) {
+      errors.push('GEMINI_DIRECT_API_KEY is not set.');
+    }
+
+    if (proxy.useProxy && !body.preferProxy && referenceImages.length > 0) {
+      try {
+        const image = await generateViaProxyGeminiNative(
+          proxy.baseUrl,
+          proxy.token,
+          body,
+          referenceImages
+        );
+        return { image, mode: 'proxy-reference' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Proxy Gemini (with reference)', err).message);
+      }
+
+      try {
+        const description =
+          body.productDescription?.trim() ||
+          (await analyzeProductForImageGen(env, referenceImages[0]));
+        const image = await generateViaProxyImagesWithDescription(env, body, description);
+        return { image, mode: 'proxy-text' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Proxy images (analyzed text)', err).message);
+      }
+    }
+
+    if (proxy.useProxy && referenceImages.length === 0 && !body.preferProxy) {
+      try {
+        const image = await generateViaProxyImagesWithDescription(
+          env,
+          body,
+          body.productDescription
+        );
+        return { image, mode: 'proxy-text' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Proxy images API', err).message);
+      }
+    }
+
+    throw {
+      message: `Image generation failed. ${errors.join(' · ')}`,
+    };
   }
 
   if (OPENAI_IMAGE_MODELS.has(body.model)) {
@@ -299,8 +450,14 @@ export async function generateImageDataUrl(env: Env, body: ImageGenRequest): Pro
         message: 'Set a personal OPENAI_API_KEY for gpt-image models, or switch to a Gemini model.',
       };
     }
-    return generateViaOpenAiNative(apiKey, body, referenceImages);
+    const image = await generateViaOpenAiNative(apiKey, body, referenceImages);
+    return { image };
   }
 
   throw { message: 'Invalid model.' };
+}
+
+export async function generateImageDataUrl(env: Env, body: ImageGenRequest): Promise<string> {
+  const result = await generateImageResult(env, body);
+  return result.image;
 }

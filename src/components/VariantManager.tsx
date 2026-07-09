@@ -1,15 +1,20 @@
-// Changes: Professional light theme variant table; auto-sync FIG-NOL SKU when size changes.
+// Changes: Auto-sync 大货 REG SKU when size changes; supports xxx-REG-size format.
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Variant } from '../utils/csvExport';
-import { buildNolSku, parseNolSku } from '../utils/podPricing';
+import { buildBulkSku, parseBulkSku } from '../utils/podPricing';
 
 interface VariantManagerProps {
   variants: Variant[];
   setVariants: React.Dispatch<React.SetStateAction<Variant[]>>;
+  productCode?: string;
 }
 
-export const VariantManager: React.FC<VariantManagerProps> = ({ variants, setVariants }) => {
+export const VariantManager: React.FC<VariantManagerProps> = ({
+  variants,
+  setVariants,
+  productCode = '',
+}) => {
   const addVariant = () => {
     setVariants([
       ...variants,
@@ -38,9 +43,10 @@ export const VariantManager: React.FC<VariantManagerProps> = ({ variants, setVar
       variants.map((v) => {
         if (v.id !== id) return v;
         const updated = { ...v, [field]: value };
-        if (field === 'option1Value' && v.sku.startsWith('FIG-NOL')) {
-          const { abbrev } = parseNolSku(v.sku);
-          updated.sku = buildNolSku(value === 'Default' ? '' : value, abbrev);
+        if (field === 'option1Value' && /-REG-/.test(v.sku)) {
+          const { productCode: pc, subCode } = parseBulkSku(v.sku);
+          const size = value === 'Default' ? '' : value;
+          updated.sku = buildBulkSku(pc || productCode, size, subCode);
         }
         return updated;
       })
@@ -58,69 +64,79 @@ export const VariantManager: React.FC<VariantManagerProps> = ({ variants, setVar
           onClick={addVariant}
           className="flex items-center px-3 py-1.5 bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-xl text-xs font-medium hover:bg-zinc-200 transition-colors"
         >
-          <Plus className="w-3 h-3 mr-1" />
+          <Plus className="w-3.5 h-3.5 mr-1.5" />
           Add Variant
         </button>
       </div>
 
-      {variants.length === 0 ? (
-        <div className="text-center py-8 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200">
-          <p className="text-sm text-zinc-500 mb-3">No variants added yet.</p>
-          <button onClick={addVariant} className="btn-secondary mx-auto">
-            <Plus className="w-4 h-4 mr-2" />
-            Add First Variant
-          </button>
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-200 shadow-sm">
-          <table className="min-w-full divide-y divide-zinc-200">
-            <thead className="bg-zinc-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 1 Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 1 Value</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 2 Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Opt 2 Value</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">SKU</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Price</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Image URL</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider"></th>
+      <div className="overflow-x-auto rounded-xl border border-zinc-200">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 text-zinc-500 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="px-4 py-3 text-left font-medium">Option 1</th>
+              <th className="px-4 py-3 text-left font-medium">Value</th>
+              <th className="px-4 py-3 text-left font-medium">SKU</th>
+              <th className="px-4 py-3 text-left font-medium">Price</th>
+              <th className="px-4 py-3 text-left font-medium">Compare</th>
+              <th className="px-4 py-3 w-10"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {variants.map((variant) => (
+              <tr key={variant.id} className="hover:bg-zinc-50/50">
+                <td className="px-4 py-2">
+                  <input
+                    type="text"
+                    value={variant.option1Name}
+                    onChange={(e) => updateVariant(variant.id, 'option1Name', e.target.value)}
+                    className="input-modern text-xs py-1.5"
+                  />
+                </td>
+                <td className="px-4 py-2">
+                  <input
+                    type="text"
+                    value={variant.option1Value}
+                    onChange={(e) => updateVariant(variant.id, 'option1Value', e.target.value)}
+                    className="input-modern text-xs py-1.5"
+                  />
+                </td>
+                <td className="px-4 py-2">
+                  <input
+                    type="text"
+                    value={variant.sku}
+                    onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
+                    className="input-modern text-xs py-1.5 font-mono"
+                  />
+                </td>
+                <td className="px-4 py-2">
+                  <input
+                    type="text"
+                    value={variant.price}
+                    onChange={(e) => updateVariant(variant.id, 'price', e.target.value)}
+                    className="input-modern text-xs py-1.5 font-mono"
+                  />
+                </td>
+                <td className="px-4 py-2">
+                  <input
+                    type="text"
+                    value={variant.compareAtPrice}
+                    onChange={(e) => updateVariant(variant.id, 'compareAtPrice', e.target.value)}
+                    className="input-modern text-xs py-1.5 font-mono"
+                  />
+                </td>
+                <td className="px-4 py-2">
+                  <button
+                    onClick={() => removeVariant(variant.id)}
+                    className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-zinc-100">
-              {variants.map((variant) => (
-                <tr key={variant.id} className="hover:bg-zinc-50/80 transition-colors">
-                  <td className="px-4 py-2">
-                    <input type="text" value={variant.option1Name} onChange={(e) => updateVariant(variant.id, 'option1Name', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 text-zinc-700 transition-colors" placeholder="e.g. Color" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" value={variant.option1Value} onChange={(e) => updateVariant(variant.id, 'option1Value', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-medium text-zinc-900 transition-colors" placeholder="e.g. Red" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" value={variant.option2Name} onChange={(e) => updateVariant(variant.id, 'option2Name', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 text-zinc-700 transition-colors" placeholder="e.g. Size" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" value={variant.option2Value} onChange={(e) => updateVariant(variant.id, 'option2Value', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-medium text-zinc-900 transition-colors" placeholder="e.g. Large" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" value={variant.sku} onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-mono text-xs text-zinc-600 transition-colors" placeholder="SKU" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" value={variant.price} onChange={(e) => updateVariant(variant.id, 'price', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-mono text-zinc-900 transition-colors" placeholder="0.00" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" value={variant.imageSrc} onChange={(e) => updateVariant(variant.id, 'imageSrc', e.target.value)} className="w-full bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-indigo-400 focus:ring-0 text-sm px-0 py-1 font-mono text-xs text-zinc-600 transition-colors" placeholder="https://..." />
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <button onClick={() => removeVariant(variant.id)} className="text-zinc-400 hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50" title="Remove Variant">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

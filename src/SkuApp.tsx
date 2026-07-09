@@ -1,16 +1,16 @@
 // Changes:
-// - Server-side API proxy; unified light studio UI.
-// - Pricing modes: FIG-POD default table + FIG-NOL custom sizes/prices with per-row code.
-// - Accepts Image Studio handoff for one-click FIG-POD / FIG-NOL SKU generation.
-// - One SKU can include multiple gallery images (Shopify Image Position 2+).
+// - POD (FIG-POD-size) vs 大货 (xxx-REG-size) pricing; shared unified history with Image Studio.
+// - Image filenames linked to product handle; handoff preserves carousel order + sourceImageIds.
+// - Publish to Shopify: uploads gallery images and creates product via Admin API.
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Download, Wand2, AlertCircle, Save, History, CheckCircle2, PackageSearch, Trash2, RefreshCw, Plus } from 'lucide-react';
+import { Download, Wand2, AlertCircle, Save, History, CheckCircle2, PackageSearch, Trash2, RefreshCw, Plus, Store, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ImageUpload } from './components/ImageUpload';
 import { VariantManager } from './components/VariantManager';
 import { DescriptionEditor } from './components/DescriptionEditor';
 import { generateProductDetails } from './services/gemini';
 import { exportCSV, Variant, ProductData, ExportItem } from './utils/csvExport';
+import { publishToShopify } from './services/shopifyService';
 import { resizeImage } from './utils/imageUtils';
 import {
   PriceMode,
@@ -18,16 +18,28 @@ import {
   POD_SIZES,
   getProductAbbreviation,
   buildPodVariants,
-  buildNolVariantsFromRows,
+  buildBulkVariantsFromRows,
   createCustomSizeRow,
   CustomSizeRow,
   applyPodAbbrevToVariants,
   isPodVariantSet,
-  isNolVariantSet,
+  isBulkVariantSet,
   customSizeRowsFromVariants,
-  buildNolSku,
+  buildBulkSku,
+  applyBulkProductCodeToVariants,
+  skuLineFromPriceMode,
+  parseBulkSku,
 } from './utils/podPricing';
 import { SkuHandoff, SkuHandoffMode, splitProductImages } from './utils/skuHandoff';
+import {
+  getStoredProducts,
+  setStoredProducts,
+  addStoredProduct,
+  linkImagesToProduct,
+  storedProductFromExportItem,
+  StoredProduct,
+} from './utils/unifiedHistory';
+import { filenameForDataUrl } from './utils/imageNaming';
 
 const MAX_PRODUCT_IMAGES = 10;
 
@@ -39,6 +51,7 @@ type GenerateOptions = {
   customRows?: CustomSizeRow[];
   productAbbrevOverride?: string;
   generationMode?: SkuHandoffMode;
+  sourceImageIds?: string[];
 };
 
 interface SkuAppProps {
@@ -48,11 +61,13 @@ interface SkuAppProps {
 
 export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProps) {
   const [view, setView] = useState<'generator' | 'history'>('generator');
-  const [history, setHistory] = useState<ExportItem[]>([]);
+  const [history, setHistory] = useState<StoredProduct[]>(() => getStoredProducts());
 
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [shopifyAdminUrl, setShopifyAdminUrl] = useState<string | null>(null);
   const [bulkProgress, setBulkProgress] = useState<{current: number, total: number} | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -70,9 +85,9 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     imageSrc: string
   ): Variant[] => {
     if (priceMode === 'pod-default') {
-      return buildPodVariants(productAbbrev.trim() || undefined, imageSrc);
+      return buildPodVariants(undefined, imageSrc);
     }
-    return buildNolVariantsFromRows(customSizeRows, imageSrc);
+    return buildBulkVariantsFromRows(customSizeRows, productAbbrev.trim() || 'PRD', imageSrc);
   };
 
   const addCustomSizeRow = () => {
@@ -107,19 +122,14 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     if (priceMode === 'pod-default') {
       setProductAbbrev(abbrev);
       if (variants.length > 0) {
-        setVariants(applyPodAbbrevToVariants(variants, abbrev));
+        setVariants(applyPodAbbrevToVariants(variants));
       }
     } else {
       setCustomSizeRows((prev) =>
-        prev.map((row) => ({ ...row, code: abbrev }))
+        prev.map((row) => ({ ...row, code: row.code || abbrev }))
       );
-      if (variants.length > 0 && isNolVariantSet(variants)) {
-        setVariants(
-          variants.map((v) => {
-            const size = v.option1Value === 'Default' ? '' : v.option1Value;
-            return { ...v, sku: buildNolSku(size, abbrev) };
-          })
-        );
+      if (variants.length > 0 && isBulkVariantSet(variants)) {
+        setVariants(applyBulkProductCodeToVariants(variants, abbrev));
       }
     }
   };
@@ -142,6 +152,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
   const [variants, setVariants] = useState<Variant[]>([]);
   const [studioImportNote, setStudioImportNote] = useState<string | null>(null);
   const lastHandoffId = useRef<string | null>(null);
+  const pendingSourceImageIds = useRef<string[]>([]);
 
   const buildVariantsForProductWithMode = (
     title: string,
@@ -152,21 +163,35 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     abbrev: string
   ): Variant[] => {
     if (mode === 'pod-default') {
-      return buildPodVariants(abbrev.trim() || undefined, imageSrc);
+      return buildPodVariants(undefined, imageSrc);
     }
-    return buildNolVariantsFromRows(rows, imageSrc);
+    return buildBulkVariantsFromRows(rows, abbrev.trim() || 'PRD', imageSrc);
   };
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem('productHistory');
-    if (savedHistory) {
-      try {
-        setHistory(JSON.parse(savedHistory));
-      } catch (e) {
-        console.error("Failed to parse history", e);
-      }
+    setHistory(getStoredProducts());
+  }, [view]);
+
+  const buildImageFileNames = (handle: string, main: string, gallery: string[]): string[] => {
+    const names: string[] = [];
+    if (main) names.push(filenameForDataUrl(handle, 1, main));
+    gallery.forEach((src, i) => names.push(filenameForDataUrl(handle, i + 2, src)));
+    return names;
+  };
+
+  const saveProductToHistory = (
+    item: ExportItem,
+    sourceImageIds: string[],
+    priceMode: PriceMode
+  ) => {
+    const stored = storedProductFromExportItem(item, sourceImageIds, priceMode);
+    addStoredProduct(stored);
+    const skuLine = skuLineFromPriceMode(priceMode);
+    if (item.product.handle && sourceImageIds.length > 0) {
+      linkImagesToProduct(sourceImageIds, item.product.handle, skuLine);
     }
-  }, []);
+    setHistory(getStoredProducts());
+  };
 
   const saveToHistory = () => {
     if (!productData.title) {
@@ -174,24 +199,22 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
       return;
     }
     const newItem: ExportItem = { product: productData, variants };
-    const updatedHistory = [...history, newItem];
-    setHistory(updatedHistory);
-    localStorage.setItem('productHistory', JSON.stringify(updatedHistory));
+    saveProductToHistory(newItem, pendingSourceImageIds.current, priceMode);
     setSuccessMsg('Product saved to history!');
     setTimeout(() => setSuccessMsg(null), 3000);
   };
 
   const clearHistory = () => {
+    setStoredProducts([]);
     setHistory([]);
-    localStorage.removeItem('productHistory');
     setSuccessMsg('History cleared!');
     setTimeout(() => setSuccessMsg(null), 3000);
   };
 
-  const deleteHistoryItem = (indexToDelete: number) => {
-    const updatedHistory = history.filter((_, index) => index !== indexToDelete);
+  const deleteHistoryItem = (idToDelete: string) => {
+    const updatedHistory = history.filter((item) => item.id !== idToDelete);
+    setStoredProducts(updatedHistory);
     setHistory(updatedHistory);
-    localStorage.setItem('productHistory', JSON.stringify(updatedHistory));
     setSuccessMsg('Product deleted from history.');
     setTimeout(() => setSuccessMsg(null), 3000);
   };
@@ -236,6 +259,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     customRows,
     productAbbrevOverride,
     generationMode: genModeOverride,
+    sourceImageIds,
   }: GenerateOptions) => {
     if (!ctxText && previews.length === 0) {
       setError('Please provide series/template information or an image.');
@@ -255,24 +279,31 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     setSuccessMsg(null);
 
     const abbrev = productAbbrevOverride ?? productAbbrev;
+    const srcIds = sourceImageIds ?? pendingSourceImageIds.current;
 
     try {
       if (previews.length > 1 && genMode === 'bulk-products') {
         setBulkProgress({ current: 0, total: previews.length });
 
-        const newHistoryItems: ExportItem[] = [];
-        let completed = 0;
+        let savedCount = 0;
 
         for (let i = 0; i < previews.length; i++) {
           try {
-            const result = await generateProductDetails(previews[i], ctxText, ctxMode);
-            completed++;
-            setBulkProgress({ current: completed, total: previews.length });
+            const result = await generateProductDetails(
+              previews[i],
+              ctxText,
+              ctxMode,
+              skuLineFromPriceMode(mode)
+            );
+            const handle = result.handle || '';
+            const mainImageSrc = previews[i] || '';
+            const imageFileNames = buildImageFileNames(handle, mainImageSrc, []);
+            const itemSourceIds = srcIds[i] ? [srcIds[i]] : [];
 
-            newHistoryItems.push({
+            const exportItem: ExportItem = {
               product: {
                 title: result.title || '',
-                handle: result.handle || '',
+                handle,
                 description_html: result.description_html || '',
                 vendor: result.vendor || '',
                 type: result.type || '',
@@ -280,59 +311,60 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                 tags: result.tags || [],
                 seo_title: result.seo_title || '',
                 seo_description: result.seo_description || '',
-                mainImageSrc: previews[i] || '',
+                mainImageSrc,
                 galleryImageSrcs: [],
+                imageFileNames,
               },
               variants: buildVariantsForProductWithMode(
                 result.title || '',
-                result.handle || '',
-                previews[i] || '',
+                handle,
+                mainImageSrc,
                 mode,
                 rows,
                 abbrev
               ),
-            });
+            };
+
+            saveProductToHistory(exportItem, itemSourceIds, mode);
+            savedCount++;
 
             if (i < previews.length - 1) {
               await new Promise((resolve) => setTimeout(resolve, 1000));
             }
           } catch (err) {
-            completed++;
-            setBulkProgress({ current: completed, total: previews.length });
             console.error('Failed to generate for a file', err);
+          } finally {
+            setBulkProgress({ current: i + 1, total: previews.length });
           }
         }
 
-        if (newHistoryItems.length > 0) {
-          setHistory((prev) => {
-            const updatedHistory = [...prev, ...newHistoryItems];
-            try {
-              localStorage.setItem('productHistory', JSON.stringify(updatedHistory));
-            } catch (e) {
-              console.error('Failed to save to localStorage, might be full', e);
-              setError('Products generated, but could not save to local storage (quota exceeded).');
-            }
-            return updatedHistory;
-          });
-
-          setSuccessMsg(`Successfully generated and saved ${newHistoryItems.length} products to history!`);
+        if (savedCount > 0) {
+          setSuccessMsg(`Successfully generated and saved ${savedCount} products to shared history!`);
         } else {
           setError('Failed to generate products.');
         }
 
         setImageFiles([]);
         setImagePreviews([]);
+        pendingSourceImageIds.current = [];
         setBulkProgress(null);
         setView('history');
       } else {
         const { mainImageSrc, galleryImageSrcs } = splitProductImages(previews);
         const fileToProcess = mainImageSrc || null;
-        const result = await generateProductDetails(fileToProcess, ctxText, ctxMode);
+        const result = await generateProductDetails(
+          fileToProcess,
+          ctxText,
+          ctxMode,
+          skuLineFromPriceMode(mode)
+        );
+        const handle = result.handle || '';
+        const imageFileNames = buildImageFileNames(handle, mainImageSrc, galleryImageSrcs);
 
         setProductData((prev) => ({
           ...prev,
           title: result.title || '',
-          handle: result.handle || '',
+          handle,
           description_html: result.description_html || '',
           vendor: result.vendor || '',
           type: result.type || '',
@@ -342,19 +374,24 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
           seo_description: result.seo_description || '',
           mainImageSrc,
           galleryImageSrcs,
+          imageFileNames,
         }));
 
         setAboutSection(result.about_section || '');
         setVariants(
           buildVariantsForProductWithMode(
             result.title || '',
-            result.handle || '',
+            handle,
             mainImageSrc,
             mode,
             rows,
             abbrev
           )
         );
+
+        if (handle && srcIds.length > 0) {
+          linkImagesToProduct(srcIds, handle, skuLineFromPriceMode(mode));
+        }
 
         if (galleryImageSrcs.length > 0) {
           setSuccessMsg(`Listing ready with ${1 + galleryImageSrcs.length} product images.`);
@@ -397,6 +434,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     if (!handoff || handoff.id === lastHandoffId.current) return;
     lastHandoffId.current = handoff.id;
 
+    pendingSourceImageIds.current = handoff.sourceImageIds;
     setView('generator');
     setImageFiles([]);
     setImagePreviews(handoff.images.slice(0, MAX_PRODUCT_IMAGES));
@@ -404,21 +442,24 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
     setPriceMode(handoff.priceMode);
     setContextText(handoff.contextText);
     setContextMode(handoff.contextMode);
+    const lineLabel = handoff.skuLine === 'pod' ? 'POD · FIG-POD-size' : '大货 · xxx-REG-size';
     setStudioImportNote(
-      handoff.mode === 'bulk-products'
-        ? `${handoff.images.length} images → ${handoff.images.length} separate SKUs`
-        : handoff.images.length > 1
-          ? `${handoff.images.length} images → 1 SKU with gallery`
-          : '1 image imported from Image Studio'
+      `${lineLabel} · ${
+        handoff.mode === 'bulk-products'
+          ? `${handoff.images.length} images → ${handoff.images.length} separate SKUs`
+          : handoff.images.length > 1
+            ? `${handoff.images.length} images → 1 SKU (hero + gallery)`
+            : '1 image from Image Studio'
+      }`
     );
 
-    let nolRows = customSizeRows;
+    let bulkRows = customSizeRows;
     if (handoff.priceMode === 'custom') {
-      nolRows = POD_SIZES.map((size) => ({
+      bulkRows = POD_SIZES.map((size) => ({
         ...createCustomSizeRow(POD_SIZE_PRICES[size], ''),
         size,
       }));
-      setCustomSizeRows(nolRows);
+      setCustomSizeRows(bulkRows);
     }
 
     if (handoff.autoGenerate) {
@@ -427,8 +468,9 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
         priceMode: handoff.priceMode,
         contextText: handoff.contextText,
         contextMode: handoff.contextMode,
-        customRows: handoff.priceMode === 'custom' ? nolRows : undefined,
+        customRows: handoff.priceMode === 'custom' ? bulkRows : undefined,
         generationMode: handoff.mode,
+        sourceImageIds: handoff.sourceImageIds,
       });
     }
 
@@ -449,7 +491,50 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
       setTimeout(() => setError(null), 3000);
       return;
     }
-    exportCSV(history, 'all_products_export');
+    exportCSV(history.map((h) => h.exportItem), 'all_products_export');
+  };
+
+  const handlePublishToShopify = async (
+    item?: ExportItem,
+    status: 'draft' | 'active' = 'draft'
+  ) => {
+    const payload: ExportItem = item ?? { product: productData, variants };
+    if (!payload.product.title?.trim()) {
+      setError('Generate a product before publishing to Shopify.');
+      return;
+    }
+    if (!payload.product.mainImageSrc?.trim()) {
+      setError('Product needs at least one image before publishing to Shopify.');
+      return;
+    }
+
+    setPublishing(true);
+    setError(null);
+    setShopifyAdminUrl(null);
+
+    try {
+      const result = await publishToShopify(payload, status);
+      setSuccessMsg(
+        `Published to Shopify (${result.status}) · ${result.imageUrls.length} image(s) on CDN.`
+      );
+      setShopifyAdminUrl(result.adminUrl);
+
+      if (!item) {
+        setProductData((prev) => ({
+          ...prev,
+          handle: result.handle || prev.handle,
+          mainImageSrc: result.imageUrls[0] || prev.mainImageSrc,
+          galleryImageSrcs: result.imageUrls.slice(1),
+        }));
+      }
+
+      setTimeout(() => setSuccessMsg(null), 6000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Shopify publish failed.';
+      setError(message);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -488,6 +573,15 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                   <Download className="w-4 h-4 mr-2" />
                   <span className="hidden sm:inline">Export CSV</span>
                 </button>
+                <button
+                  onClick={() => handlePublishToShopify(undefined, 'draft')}
+                  disabled={!productData.title || !productData.mainImageSrc || publishing || loading}
+                  className="btn-secondary"
+                  title="Upload images to Shopify CDN and create a draft product"
+                >
+                  <Store className="w-4 h-4 mr-2" />
+                  <span className="hidden sm:inline">{publishing ? 'Publishing…' : 'Publish Draft'}</span>
+                </button>
               </>
             ) : (
               <button onClick={handleExportAll} disabled={history.length === 0} className="btn-primary">
@@ -520,7 +614,20 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
               className="mb-6 bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-start"
             >
               <CheckCircle2 className="w-5 h-5 text-emerald-600 mr-3 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-emerald-700 font-medium">{successMsg}</p>
+              <div className="flex-1">
+                <p className="text-sm text-emerald-700 font-medium">{successMsg}</p>
+                {shopifyAdminUrl && (
+                  <a
+                    href={shopifyAdminUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-emerald-800 underline mt-2 font-medium"
+                  >
+                    Open in Shopify Admin
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -591,21 +698,21 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                         onClick={() => setPriceMode('pod-default')}
                         className={`studio-tab flex-1 text-center ${priceMode === 'pod-default' ? 'studio-tab-active' : ''}`}
                       >
-                        FIG-POD Default
+                        POD · FIG-POD
                       </button>
                       <button
                         type="button"
                         onClick={() => setPriceMode('custom')}
                         className={`studio-tab flex-1 text-center ${priceMode === 'custom' ? 'studio-tab-active' : ''}`}
                       >
-                        Custom Price
+                        大货 · REG
                       </button>
                     </div>
 
                     {priceMode === 'pod-default' ? (
                       <div className="space-y-3">
                         <p className="text-xs text-zinc-500 text-center leading-relaxed">
-                          SKU format: <span className="font-mono text-zinc-700">FIG-POD-[size]-XXX</span>
+                          SKU format: <span className="font-mono text-zinc-700">FIG-POD-{'{size}'}</span>
                         </p>
                         <div className="rounded-xl border border-zinc-200 overflow-hidden text-xs">
                           <table className="w-full">
@@ -613,6 +720,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                               <tr>
                                 <th className="px-3 py-2 text-left font-medium">Size</th>
                                 <th className="px-3 py-2 text-right font-medium">Price</th>
+                                <th className="px-3 py-2 text-right font-medium">SKU</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-100">
@@ -622,60 +730,54 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                                   <td className="px-3 py-2 text-right font-mono text-zinc-900">
                                     ${POD_SIZE_PRICES[size]}
                                   </td>
+                                  <td className="px-3 py-2 text-right font-mono text-indigo-600 text-[10px]">
+                                    FIG-POD-{size}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
-                        </div>
-                        <div>
-                          <label className="label-modern">Product code (optional, 3 letters)</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              maxLength={3}
-                              value={productAbbrev}
-                              onChange={(e) => {
-                                const val = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
-                                setProductAbbrev(val);
-                                if (priceMode === 'pod-default' && variants.length > 0 && isPodVariantSet(variants)) {
-                                  setVariants(applyPodAbbrevToVariants(variants, val));
-                                }
-                              }}
-                              className="input-modern text-center font-mono uppercase"
-                              placeholder="Optional"
-                            />
-                            <button
-                              type="button"
-                              onClick={syncAbbrevFromTitle}
-                              className="btn-secondary px-3 shrink-0"
-                              title="Suggest code from product title"
-                            >
-                              <RefreshCw className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <p className="text-[11px] text-zinc-500 mt-1.5 text-center">
-                            Leave empty for <span className="font-mono">FIG-POD-6cm</span>
-                            {productAbbrev
-                              ? ` · With code: FIG-POD-6cm-${productAbbrev}`
-                              : ' · Or add code: FIG-POD-6cm-ABC'}
-                          </p>
                         </div>
                       </div>
                     ) : (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-xs text-zinc-500">
-                            SKU: <span className="font-mono text-zinc-700">FIG-NOL-[size]-XXX</span>
+                            SKU:{' '}
+                            <span className="font-mono text-zinc-700">
+                              {'{code}'}-REG-{'{size}'}
+                            </span>{' '}
+                            or{' '}
+                            <span className="font-mono text-zinc-700">
+                              {'{code}'}-REG-{'{sub}'}-{'{size}'}
+                            </span>
                           </p>
                           <button
                             type="button"
                             onClick={syncAbbrevFromTitle}
                             className="btn-secondary px-2 py-1 text-[10px] shrink-0"
-                            title="Fill all codes from product title"
+                            title="Suggest product code from title"
                           >
                             <RefreshCw className="w-3 h-3 mr-1 inline" />
-                            Fill codes
+                            Code
                           </button>
+                        </div>
+                        <div>
+                          <label className="label-modern">Product code (xxx in xxx-REG-size)</label>
+                          <input
+                            type="text"
+                            maxLength={3}
+                            value={productAbbrev}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+                              setProductAbbrev(val);
+                              if (variants.length > 0 && isBulkVariantSet(variants)) {
+                                setVariants(applyBulkProductCodeToVariants(variants, val));
+                              }
+                            }}
+                            className="input-modern text-center font-mono uppercase"
+                            placeholder="e.g. BUL"
+                          />
                         </div>
                         <div className="space-y-2">
                           {customSizeRows.map((row, idx) => (
@@ -736,7 +838,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                               </div>
                               {row.size.trim() && (
                                 <p className="text-[10px] text-zinc-500 font-mono">
-                                  SKU: {buildNolSku(row.size, row.code)}
+                                  SKU: {buildBulkSku(productAbbrev || 'PRD', row.size, row.code)}
                                 </p>
                               )}
                             </div>
@@ -932,7 +1034,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                 </div>
 
                 <div className="card-modern">
-                  <VariantManager variants={variants} setVariants={setVariants} />
+                  <VariantManager variants={variants} setVariants={setVariants} productCode={productAbbrev} />
                 </div>
               </div>
             </motion.div>
@@ -946,7 +1048,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
               className="studio-card p-0 overflow-hidden"
             >
               <div className="px-6 py-5 border-b border-zinc-200 flex justify-between items-center bg-zinc-50">
-                <h2 className="text-base font-semibold text-zinc-900">Generated Products History</h2>
+                <h2 className="text-base font-semibold text-zinc-900">Shared Product History</h2>
                 {history.length > 0 && (
                   <button
                     onClick={clearHistory}
@@ -973,8 +1075,10 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                 </div>
               ) : (
                 <div className="divide-y divide-zinc-200">
-                  {history.map((item, idx) => (
-                    <div key={idx} className="p-6 hover:bg-zinc-100/30 transition-colors flex items-start space-x-5 group">
+                  {history.map((stored) => {
+                    const item = stored.exportItem;
+                    return (
+                    <div key={stored.id} className="p-6 hover:bg-zinc-100/30 transition-colors flex items-start space-x-5 group">
                       {item.product.mainImageSrc ? (
                         <img src={item.product.mainImageSrc} alt="" className="w-24 h-24 object-cover rounded-2xl border border-zinc-200 shadow-sm" />
                       ) : (
@@ -986,12 +1090,24 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                         <h3 className="text-base font-semibold text-zinc-900 truncate mb-1">{item.product.title || 'Untitled Product'}</h3>
                         <p className="text-xs text-slate-500 mb-3 font-mono truncate">{item.product.handle || 'no-handle'}</p>
                         <div className="flex flex-wrap gap-2">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${
+                            stored.skuLine === 'pod'
+                              ? 'bg-indigo-500/10 text-indigo-700 border-indigo-200'
+                              : 'bg-amber-500/10 text-amber-800 border-amber-200'
+                          }`}>
+                            {stored.skuLine === 'pod' ? 'POD' : '大货'}
+                          </span>
                           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-700 uppercase tracking-wider border border-zinc-200">
                             {item.variants.length} Variants
                           </span>
                           {(1 + (item.product.galleryImageSrcs?.length ?? 0)) > 1 && (
                             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 uppercase tracking-wider border border-emerald-200">
                               {1 + (item.product.galleryImageSrcs?.length ?? 0)} Images
+                            </span>
+                          )}
+                          {stored.sourceImageIds.length > 0 && (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-violet-500/10 text-violet-700 uppercase tracking-wider border border-violet-200">
+                              Linked studio
                             </span>
                           )}
                           {item.product.type && (
@@ -1003,7 +1119,17 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                       </div>
                       <div className="flex-shrink-0 py-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-2">
                         <button
+                          onClick={() => handlePublishToShopify(item, 'draft')}
+                          disabled={publishing || !item.product.mainImageSrc}
+                          className="btn-secondary text-xs px-3 py-2"
+                          title="Publish draft to Shopify"
+                        >
+                          <Store className="w-3.5 h-3.5 mr-1 inline" />
+                          Publish
+                        </button>
+                        <button
                           onClick={() => {
+                            pendingSourceImageIds.current = stored.sourceImageIds;
                             setProductData({
                               ...item.product,
                               galleryImageSrcs: item.product.galleryImageSrcs ?? [],
@@ -1017,12 +1143,12 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                             setVariants(item.variants);
                             if (isPodVariantSet(item.variants)) {
                               setPriceMode('pod-default');
-                              const sku = item.variants[0]?.sku || '';
-                              const match = sku.match(/^FIG-POD-\d+cm(?:-([A-Z]{3}))?$/i);
-                              setProductAbbrev(match?.[1]?.toUpperCase() || '');
-                            } else if (isNolVariantSet(item.variants)) {
+                              setProductAbbrev('');
+                            } else if (isBulkVariantSet(item.variants)) {
                               setPriceMode('custom');
                               setCustomSizeRows(customSizeRowsFromVariants(item.variants));
+                              const parsed = item.variants[0]?.sku ? parseBulkSku(item.variants[0].sku) : null;
+                              setProductAbbrev(parsed?.productCode || '');
                             } else {
                               setPriceMode('custom');
                               setCustomSizeRows(customSizeRowsFromVariants(item.variants));
@@ -1034,7 +1160,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                           Edit Draft
                         </button>
                         <button
-                          onClick={() => deleteHistoryItem(idx)}
+                          onClick={() => deleteHistoryItem(stored.id)}
                           className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"
                           title="Delete item"
                         >
@@ -1042,7 +1168,8 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </motion.div>

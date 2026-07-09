@@ -1,4 +1,4 @@
-// Changes: FIG-POD + FIG-NOL pricing; per-row optional 3-letter code on FIG-NOL custom sizes.
+// Changes: POD = FIG-POD-{size}; 大货 = {code}-REG-{size} or {code}-REG-{sub}-{size}.
 import { Variant } from './csvExport';
 
 export const POD_SIZES = ['4cm', '5cm', '6cm', '7cm', '8cm', '10cm'] as const;
@@ -19,6 +19,7 @@ export type PriceMode = 'pod-default' | 'custom';
 export interface CustomSizeRow {
   id: string;
   size: string;
+  /** Optional middle segment in xxx-REG-xxx-size */
   code: string;
   price: string;
 }
@@ -61,13 +62,13 @@ export function getProductAbbreviation(title: string, handle?: string): string {
   return 'PRD';
 }
 
-export function buildPodSku(size: string, abbrev?: string): string {
-  const code = abbrev?.trim().toUpperCase().slice(0, 3);
-  if (!code) return `FIG-POD-${size}`;
-  return `FIG-POD-${size}-${code}`;
+/** POD SKU — always FIG-POD-{size} */
+export function buildPodSku(size: string): string {
+  const sz = size.trim();
+  return sz ? `FIG-POD-${sz}` : 'FIG-POD';
 }
 
-export function buildPodVariants(abbrev?: string, imageSrc = ''): Variant[] {
+export function buildPodVariants(_abbrev?: string, imageSrc = ''): Variant[] {
   return POD_SIZES.map((size, i) => ({
     id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
     option1Name: 'Size',
@@ -76,36 +77,58 @@ export function buildPodVariants(abbrev?: string, imageSrc = ''): Variant[] {
     option2Value: '',
     option3Name: '',
     option3Value: '',
-    sku: buildPodSku(size, abbrev),
+    sku: buildPodSku(size),
     price: POD_SIZE_PRICES[size],
     compareAtPrice: '',
     imageSrc,
   }));
 }
 
-export function buildNolSku(size: string, abbrev?: string): string {
-  const trimmed = size.trim();
-  const code = abbrev?.trim().toUpperCase().slice(0, 3);
-  if (!trimmed) {
-    return code ? `FIG-NOL-${code}` : 'FIG-NOL';
+/**
+ * 大货 SKU:
+ * - {productCode}-REG-{size}
+ * - {productCode}-REG-{subCode}-{size}
+ */
+export function buildBulkSku(productCode: string, size: string, subCode?: string): string {
+  const pc = productCode.trim().toUpperCase();
+  const sc = subCode?.trim().toUpperCase();
+  const sz = size.trim();
+
+  if (!pc) {
+    if (!sz) return 'REG';
+    return sc ? `REG-${sc}-${sz}` : `REG-${sz}`;
   }
-  return code ? `FIG-NOL-${trimmed}-${code}` : `FIG-NOL-${trimmed}`;
+  if (!sz) return sc ? `${pc}-REG-${sc}` : `${pc}-REG`;
+  if (sc) return `${pc}-REG-${sc}-${sz}`;
+  return `${pc}-REG-${sz}`;
 }
 
+export function parseBulkSku(sku: string): { productCode?: string; subCode?: string; size: string } {
+  const regMatch = sku.match(/^([A-Z0-9]+)-REG-(?:([A-Z0-9]+)-)?(.+)$/i);
+  if (regMatch) {
+    return { productCode: regMatch[1].toUpperCase(), subCode: regMatch[2]?.toUpperCase(), size: regMatch[3] };
+  }
+  return { size: '' };
+}
+
+/** @deprecated Use buildBulkSku — legacy FIG-NOL alias */
+export function buildNolSku(size: string, productCode?: string): string {
+  return buildBulkSku(productCode || '', size);
+}
+
+/** @deprecated Use parseBulkSku */
 export function parseNolSku(sku: string): { size: string; abbrev?: string } {
-  if (!sku.startsWith('FIG-NOL')) return { size: '' };
-  const rest = sku.slice('FIG-NOL-'.length);
-  const match = rest.match(/^(.+)-([A-Z]{3})$/);
-  if (match) return { size: match[1], abbrev: match[2] };
-  return { size: rest };
+  const parsed = parseBulkSku(sku);
+  return { size: parsed.size, abbrev: parsed.productCode };
 }
 
-export function buildNolVariant(
+export function buildBulkVariant(
   size: string,
   price: string,
   imageSrc = '',
   index = 0,
-  abbrev?: string
+  productCode?: string,
+  subCode?: string
 ): Variant {
   const sizeVal = size.trim() || 'Default';
   return {
@@ -116,33 +139,47 @@ export function buildNolVariant(
     option2Value: '',
     option3Name: '',
     option3Value: '',
-    sku: buildNolSku(size, abbrev),
+    sku: buildBulkSku(productCode || '', size, subCode),
     price: price || '0.00',
     compareAtPrice: '',
     imageSrc,
   };
 }
 
-export function buildNolVariantsFromRows(rows: CustomSizeRow[], imageSrc = ''): Variant[] {
+export function buildBulkVariantsFromRows(
+  rows: CustomSizeRow[],
+  productCode: string,
+  imageSrc = ''
+): Variant[] {
   const valid = rows.filter((r) => r.size.trim());
   return valid.map((row, i) =>
-    buildNolVariant(row.size, row.price, imageSrc, i, row.code.trim() || undefined)
+    buildBulkVariant(row.size, row.price, imageSrc, i, productCode, row.code.trim() || undefined)
   );
 }
 
+/** @deprecated Use buildBulkVariantsFromRows */
+export function buildNolVariantsFromRows(rows: CustomSizeRow[], imageSrc = '', productCode = ''): Variant[] {
+  return buildBulkVariantsFromRows(rows, productCode, imageSrc);
+}
+
 export function isPodVariantSet(variants: Variant[]): boolean {
-  return variants.length > 0 && variants.every((v) => v.sku.startsWith('FIG-POD-'));
+  return variants.length > 0 && variants.every((v) => v.sku.startsWith('FIG-POD-') || v.sku === 'FIG-POD');
 }
 
+export function isBulkVariantSet(variants: Variant[]): boolean {
+  return variants.length > 0 && variants.every((v) => /-REG-/.test(v.sku));
+}
+
+/** @deprecated Use isBulkVariantSet */
 export function isNolVariantSet(variants: Variant[]): boolean {
-  return variants.length > 0 && variants.every((v) => v.sku.startsWith('FIG-NOL'));
+  return isBulkVariantSet(variants);
 }
 
-export function applyPodAbbrevToVariants(variants: Variant[], abbrev?: string): Variant[] {
+export function applyPodAbbrevToVariants(variants: Variant[]): Variant[] {
   return variants.map((v) => {
     const size = v.option1Value;
     if ((POD_SIZES as readonly string[]).includes(size)) {
-      return { ...v, sku: buildPodSku(size, abbrev) };
+      return { ...v, sku: buildPodSku(size) };
     }
     return v;
   });
@@ -151,19 +188,34 @@ export function applyPodAbbrevToVariants(variants: Variant[], abbrev?: string): 
 export function customSizeRowsFromVariants(variants: Variant[]): CustomSizeRow[] {
   if (variants.length === 0) return [createCustomSizeRow()];
   return variants.map((v) => {
-    const parsed = parseNolSku(v.sku);
+    const parsed = parseBulkSku(v.sku);
     return {
       id: v.id,
       size: v.option1Value === 'Default' ? '' : v.option1Value,
-      code: parsed.abbrev || '',
+      code: parsed.subCode || '',
       price: v.price,
     };
   });
 }
 
+export function applyBulkProductCodeToVariants(variants: Variant[], productCode?: string): Variant[] {
+  const pc = productCode?.trim().toUpperCase() || '';
+  return variants.map((v) => {
+    const parsed = parseBulkSku(v.sku);
+    const size = v.option1Value === 'Default' ? '' : v.option1Value;
+    return { ...v, sku: buildBulkSku(pc, size, parsed.subCode) };
+  });
+}
+
+/** @deprecated Use applyBulkProductCodeToVariants */
 export function applyNolAbbrevToVariants(variants: Variant[], abbrev?: string): Variant[] {
-  return variants.map((v) => ({
-    ...v,
-    sku: buildNolSku(v.option1Value === 'Default' ? '' : v.option1Value, abbrev),
-  }));
+  return applyBulkProductCodeToVariants(variants, abbrev);
+}
+
+export function priceModeFromSkuLine(line: 'pod' | 'bulk'): PriceMode {
+  return line === 'pod' ? 'pod-default' : 'custom';
+}
+
+export function skuLineFromPriceMode(mode: PriceMode): 'pod' | 'bulk' {
+  return mode === 'pod-default' ? 'pod' : 'bulk';
 }

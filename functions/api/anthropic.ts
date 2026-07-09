@@ -1,4 +1,4 @@
-// Changes: SKU copy via direct Google Gemini API (GEMINI_DIRECT_API_KEY).
+// Changes: POD title = JuJuBit pipe format (Name | Tagline); FIG-POD only in variant SKUs, not title.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 import {
   DEFAULT_GEMINI_TEXT_MODEL,
@@ -7,22 +7,44 @@ import {
   requireDirectGeminiApiKey,
 } from './_utils/geminiDirect';
 
+type SkuLine = 'pod' | 'bulk';
+
 type Body = {
   imageBase64?: string | null;
   contextText?: string;
   contextMode?: 'series' | 'template';
+  skuLine?: SkuLine;
 };
 
-function buildPrompt(contextMode: 'series' | 'template', contextText: string) {
+function titleRules(skuLine?: SkuLine): string {
+  if (skuLine === 'pod') {
+    return `CRITICAL — PRODUCT TITLE (POD listing, JuJuBit store style):
+The "title" MUST use pipe separator: "[Character/Product Descriptor] | [Marketing tagline]"
+Examples:
+- "Custom Figurine of Yourself | Turn Your Photo into a 3D Printed Figure"
+- "Custom Hogwarts Student Figurine | Create Your Own 3D Printed Collectible Figure"
+- NEVER include "FIG-POD", SKU codes, or sizes in the title — those belong in variant SKUs only (FIG-POD-4cm etc.)
+The "handle" must be a URL-friendly slug derived from the title (no "fig-pod" prefix unless natural).`;
+  }
+
+  if (skuLine === 'bulk') {
+    return `CRITICAL — PRODUCT TITLE (Bulk / 大货):
+The "title" MUST be a clean descriptive product name (e.g. "Tactical Operator Action Figure").
+- Do NOT include FIG-POD, REG, or SKU codes in the title
+The "handle" must be a URL-friendly slug.`;
+  }
+
+  return `CRITICAL — PRODUCT TITLE:
+Analyze the image and ${'context'} below. Write a professional Shopify product title appropriate for the series type described in the context.
+Do NOT put SKU codes (FIG-POD, REG) in the title unless the context explicitly requires a different format.
+The "handle" must be a URL-friendly slug.`;
+}
+
+function buildPrompt(contextMode: 'series' | 'template', contextText: string, skuLine?: SkuLine) {
   return `You are an expert Shopify product copywriter and SEO specialist.
 Based on the provided image and the overall ${contextMode} information, generate comprehensive product listing details.
 
-CRITICAL INSTRUCTION FOR TITLE & HANDLE:
-Carefully analyze the specific visual details of the image.
-The "title" MUST follow this exact format: "[Name of ${contextMode}] - [Creative Name]".
-- The "[Name of ${contextMode}]" should be derived from the ${contextMode} information provided below.
-- The "[Creative Name]" MUST be 1-3 words maximum, highly creative, and descriptive of this EXACT specific item's unique visual characteristics (colors, poses, vibe) so it stands out.
-The "handle" must be a URL-friendly version of this unique title.
+${titleRules(skuLine)}
 
 ${contextMode.toUpperCase()} INFORMATION:
 ${contextText}
@@ -50,6 +72,12 @@ function parseModelJson(textBlock: string) {
   return JSON.parse(cleaned);
 }
 
+function inferSkuLine(contextText: string): SkuLine | undefined {
+  if (/FIG-POD Print-on-Demand|Variant SKU format: FIG-POD/i.test(contextText)) return 'pod';
+  if (/大货|Bulk \/ Wholesale|REG SKU/i.test(contextText)) return 'bulk';
+  return undefined;
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const denied = requireAuth(request, env);
   if (denied) return denied;
@@ -61,7 +89,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: 'Invalid JSON body.' }, 400);
   }
 
-  const { imageBase64, contextText, contextMode } = body;
+  const { imageBase64, contextText, contextMode, skuLine: bodySkuLine } = body;
   if (contextMode !== 'series' && contextMode !== 'template') {
     return jsonResponse({ error: 'Invalid contextMode.' }, 400);
   }
@@ -69,7 +97,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: 'Missing contextText.' }, 400);
   }
 
-  const prompt = buildPrompt(contextMode, contextText);
+  const skuLine = bodySkuLine === 'pod' || bodySkuLine === 'bulk'
+    ? bodySkuLine
+    : inferSkuLine(contextText);
+
+  const prompt = buildPrompt(contextMode, contextText, skuLine);
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
   if (imageBase64) {

@@ -8,9 +8,9 @@
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
-// - Multi-View: upload reference + single Generate button (Top / Side / Zoom).
-// - Image Studio History: one-click FIG-POD / FIG-NOL SKU handoff to SKU Generator.
-import React, { useState, useCallback, useRef } from 'react';
+// - Multi-View: Gemini + reference first (VPN/fast path); proxy text fallback only if needed.
+// - Shared History: POD vs 大货 SKU line, carousel selection order, unified localStorage with SKU Generator.
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
 import { ImageGrid } from './components/ImageGrid';
@@ -32,9 +32,20 @@ import {
   buildSceneSmartPrompts,
   getSceneSmartBatchTemplate,
 } from './utils/scenePrompts';
-import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box, Stamp, Boxes } from 'lucide-react';
-import { PriceMode } from './utils/podPricing';
-import { SkuHandoff, SkuHandoffMode, createSkuHandoffFromImages } from './utils/skuHandoff';
+import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Loader2, Hand, Images, Upload, X, Trash2, ChevronRight, Package, Box, Stamp, Boxes, ArrowRight, Sparkles } from 'lucide-react';
+// - Shared History: POD vs 大货 SKU line; push selected images to Product Optimizer.
+import { SkuHandoff, SkuHandoffMode, createSkuHandoffFromImages, orderedImagesFromSelection } from './utils/skuHandoff';
+import { createOptimizerHandoffFromImages } from './utils/optimizerHandoff';
+import { compressDataUrl } from './utils/imageUtils';
+import {
+  getStoredImages,
+  setStoredImages,
+  removeStoredImage,
+  clearStoredImages,
+  SkuLine,
+} from './utils/unifiedHistory';
+
+const SKU_LINE_PREF_KEY = 'ecs_sku_line_pref';
 
 // Helper to shuffle array for random selection
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -48,13 +59,24 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 
 interface ImageStudioAppProps {
   onSendToSku?: (handoff: SkuHandoff) => void;
+  onSendToOptimizer?: (handoff: import('./utils/optimizerHandoff').OptimizerHandoff) => void;
 }
 
-const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
+const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOptimizer }) => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
   const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
-  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [images, setImages] = useState<GeneratedImage[]>(() => getStoredImages());
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
+  const [selectionOrder, setSelectionOrder] = useState<string[]>([]);
+  const [skuLineSelection, setSkuLineSelection] = useState<SkuLine>(() => {
+    try {
+      const saved = localStorage.getItem(SKU_LINE_PREF_KEY);
+      return saved === 'bulk' ? 'bulk' : 'pod';
+    } catch {
+      return 'pod';
+    }
+  });
+  const [galleryMode, setGalleryMode] = useState<SkuHandoffMode>('single-product');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progressMessage, setProgressMessage] = useState<string | null>(null);
@@ -93,6 +115,24 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
   const [logoSizePercent, setLogoSizePercent] = useState(15);
   const [logoPrompt, setLogoPrompt] = useState('');
   const [logoAspectRatio, setLogoAspectRatio] = useState<AspectRatio>('1:1');
+
+  useEffect(() => {
+    const syncFromStorage = () => setImages(getStoredImages());
+    window.addEventListener('focus', syncFromStorage);
+    return () => window.removeEventListener('focus', syncFromStorage);
+  }, []);
+
+  useEffect(() => {
+    setStoredImages(images);
+  }, [images]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SKU_LINE_PREF_KEY, skuLineSelection);
+    } catch {
+      /* ignore */
+    }
+  }, [skuLineSelection]);
 
   const handleModelChange = (nextModel: ModelType) => {
     setModel(nextModel);
@@ -149,11 +189,13 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
 
   const handleDelete = useCallback((id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
+    removeStoredImage(id);
     setSelectedImageIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
+    setSelectionOrder((prev) => prev.filter((x) => x !== id));
   }, []);
 
   const toggleImageSelection = useCallback((id: string) => {
@@ -163,18 +205,36 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
       else next.add(id);
       return next;
     });
+    setSelectionOrder((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      return [...prev, id];
+    });
   }, []);
 
-  const handleSendToSku = useCallback(
-    (studioImages: GeneratedImage[], priceMode: PriceMode, mode: SkuHandoffMode = 'single-product') => {
-      if (!onSendToSku || studioImages.length === 0) return;
-      onSendToSku(createSkuHandoffFromImages(studioImages, priceMode, { autoGenerate: true, mode }));
+  const handleSendToOptimizer = useCallback(
+    (studioImages: GeneratedImage[]) => {
+      if (!onSendToOptimizer || studioImages.length === 0) return;
+      onSendToOptimizer(createOptimizerHandoffFromImages(studioImages));
       setSelectedImageIds(new Set());
+      setSelectionOrder([]);
     },
-    [onSendToSku]
+    [onSendToOptimizer]
   );
 
-  const selectedImages = images.filter((img) => selectedImageIds.has(img.id));
+  const handleSendToSku = useCallback(
+    (studioImages: GeneratedImage[], mode: SkuHandoffMode = 'single-product') => {
+      if (!onSendToSku || studioImages.length === 0) return;
+      onSendToSku(createSkuHandoffFromImages(studioImages, skuLineSelection, { autoGenerate: true, mode }));
+      setSelectedImageIds(new Set());
+      setSelectionOrder([]);
+    },
+    [onSendToSku, skuLineSelection]
+  );
+
+  const selectedOrderedImages = useMemo(
+    () => orderedImagesFromSelection(images, selectionOrder.filter((id) => selectedImageIds.has(id))),
+    [images, selectionOrder, selectedImageIds]
+  );
 
   // --- Background Tab Handlers ---
   const handleBgGenerate = async (color: string, promptDetails: string) => {
@@ -259,9 +319,11 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
 
     setIsGenerating(true);
     setError(null);
-    setProgressMessage("Starting Multi-View Generation...");
+    setProgressMessage('Preparing reference image…');
 
     const ratio: AspectRatio = '1:1';
+    const completedViews: string[] = [];
+    let lastMode = '';
 
     try {
       const targetModel = resolveGeminiImageModel(model);
@@ -272,44 +334,97 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
           return;
       }
 
-      let successCount = 0;
+      const refForApi = await compressDataUrl(multiViewImage);
+      setProgressMessage('Generating Top, Side, and Zoom in parallel (Gemini + reference)…');
 
-      for (const [index, view] of MULTIVIEW_ANGLES.entries()) {
+      type ViewOutcome = { viewIndex: number; image?: GeneratedImage; error?: unknown };
+
+      const runView = async (
+        viewIndex: number,
+        useProxyFallback: boolean,
+        productDescription?: string
+      ): Promise<ViewOutcome> => {
+        const view = MULTIVIEW_ANGLES[viewIndex];
+        const fullPrompt = useProxyFallback
+          ? buildMultiViewPromptWithProduct(view.key, productDescription || 'product')
+          : buildMultiViewPrompt(view.key);
+
+        const base64Image = await generateImageFromGemini(
+          fullPrompt,
+          ratio,
+          targetModel,
+          useProxyFallback ? undefined : refForApi,
+          undefined,
+          useProxyFallback
+            ? { productDescription, preferProxy: true, onMode: (m) => { lastMode = m; } }
+            : { onMode: (m) => { lastMode = m; } }
+        );
+
+        const newImage: GeneratedImage = {
+          id: crypto.randomUUID(),
+          url: base64Image,
+          prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
+          timestamp: Date.now(),
+          aspectRatio: ratio,
+          model: targetModel,
+          tab: AppTab.MULTIVIEW,
+        };
+
+        completedViews.push(view.label);
+        setProgressMessage(
+          `Done: ${completedViews.join(', ')}${completedViews.length < MULTIVIEW_ANGLES.length ? ' — still generating…' : ''}`
+        );
+        setImages((prev) => [newImage, ...prev]);
+        return { viewIndex, image: newImage };
+      };
+
+      const phase1 = await Promise.all(
+        MULTIVIEW_ANGLES.map((_, index) =>
+          runView(index, false).catch((error) => ({ viewIndex: index, error }))
+        )
+      );
+
+      const failed = phase1.filter(
+        (r): r is { viewIndex: number; error?: unknown } => !('image' in r && r.image)
+      );
+
+      if (failed.length > 0) {
+        setProgressMessage(
+          `${failed.length} view(s) need proxy fallback — analyzing product…`
+        );
+        let productDescription = 'product';
         try {
-          setProgressMessage(`Generating ${view.label} view (${index + 1}/3)...`);
-          if (index > 0) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-
-          const fullPrompt = buildMultiViewPrompt(view.key);
-
-          const base64Image = await generateImageFromGemini(
-            fullPrompt,
-            ratio,
-            targetModel,
-            multiViewImage
-          );
-
-          const newImage: GeneratedImage = {
-            id: crypto.randomUUID(),
-            url: base64Image,
-            prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
-            timestamp: Date.now(),
-            aspectRatio: ratio,
-            model: targetModel,
-            tab: AppTab.MULTIVIEW
-          };
-
-          setImages(prev => [newImage, ...prev]);
-          successCount++;
-
-        } catch (innerErr) {
-          console.error(`Failed to generate ${view.label} view:`, innerErr);
+          productDescription = await analyzeImage(refForApi);
+        } catch {
+          productDescription = 'product';
         }
+
+        setProgressMessage(`Retrying ${failed.length} view(s) via studio proxy…`);
+        await Promise.all(
+          failed.map(({ viewIndex }) =>
+            runView(viewIndex, true, productDescription).catch((error) => {
+              console.error(`Proxy fallback failed for ${MULTIVIEW_ANGLES[viewIndex].label}:`, error);
+              return { viewIndex, error };
+            })
+          )
+        );
       }
 
+      const successCount = completedViews.length;
+
       if (successCount === 0) {
-        throw new Error("Failed to generate any views. Try a clearer reference photo.");
+        const firstFailed = phase1.find((r) => r.error);
+        const reason =
+          firstFailed?.error instanceof Error
+            ? firstFailed.error.message
+            : 'Failed to generate any views.';
+        throw new Error(reason);
+      }
+
+      if (successCount < MULTIVIEW_ANGLES.length) {
+        setError(`Only ${successCount}/${MULTIVIEW_ANGLES.length} views succeeded. You can retry for the missing angles.`);
+      } else if (lastMode === 'direct-reference') {
+        setProgressMessage('All 3 views done (direct Gemini + reference).');
       }
 
     } catch (err: any) {
@@ -317,7 +432,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
         setError(err.message || "Failed to generate multi-view images.");
     } finally {
         setIsGenerating(false);
-        setProgressMessage(null);
+        setTimeout(() => setProgressMessage(null), 2000);
     }
   };
 
@@ -346,47 +461,73 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
 
         for (let i = 0; i < multiViewBatchFiles.length; i++) {
             const { preview, file } = multiViewBatchFiles[i];
+            const refForApi = await compressDataUrl(preview);
 
-            setProgressMessage(`Analyzing Item ${i + 1}/${multiViewBatchFiles.length}...`);
+            setProgressMessage(`Item ${i + 1}/${multiViewBatchFiles.length}: Generating 3 views (Gemini + reference)…`);
+
             let productDescription = 'product';
-            try {
-                productDescription = await analyzeImage(preview);
-            } catch (e) {
-                productDescription = 'product';
-            }
 
-            for (const [vIdx, view] of MULTIVIEW_ANGLES.entries()) {
-                setProgressMessage(`Item ${i + 1}: Generating ${view.label} (${vIdx + 1}/3)...`);
-
-                if (vIdx > 0 || i > 0) await new Promise(r => setTimeout(r, 1500));
-
+            const viewResults = await Promise.all(
+              MULTIVIEW_ANGLES.map(async (view, vIdx) => {
                 try {
-                    const fullPrompt = buildMultiViewPromptWithProduct(view.key, productDescription);
-
+                  const fullPrompt = buildMultiViewPrompt(view.key);
+                  const base64Image = await generateImageFromGemini(
+                    fullPrompt,
+                    ratio,
+                    targetModel,
+                    refForApi
+                  );
+                  const newImage: GeneratedImage = {
+                    id: crypto.randomUUID(),
+                    url: base64Image,
+                    prompt: `Batch (${file.name}): ${view.label}`,
+                    timestamp: Date.now(),
+                    aspectRatio: ratio,
+                    model: targetModel,
+                    tab: AppTab.MULTIVIEW,
+                  };
+                  setImages((prev) => [newImage, ...prev]);
+                  return { ok: true as const };
+                } catch (primaryErr) {
+                  try {
+                    if (productDescription === 'product') {
+                      try {
+                        productDescription = await analyzeImage(refForApi);
+                      } catch {
+                        productDescription = 'product';
+                      }
+                    }
+                    const fallbackPrompt = buildMultiViewPromptWithProduct(view.key, productDescription);
                     const base64Image = await generateImageFromGemini(
-                        fullPrompt,
-                        ratio,
-                        targetModel,
-                        preview
+                      fallbackPrompt,
+                      ratio,
+                      targetModel,
+                      undefined,
+                      undefined,
+                      { productDescription, preferProxy: true }
                     );
-
                     const newImage: GeneratedImage = {
-                        id: crypto.randomUUID(),
-                        url: base64Image,
-                        prompt: `Batch (${file.name}): ${view.label}`,
-                        timestamp: Date.now(),
-                        aspectRatio: ratio,
-                        model: targetModel,
-                        tab: AppTab.MULTIVIEW
+                      id: crypto.randomUUID(),
+                      url: base64Image,
+                      prompt: `Batch (${file.name}): ${view.label}`,
+                      timestamp: Date.now(),
+                      aspectRatio: ratio,
+                      model: targetModel,
+                      tab: AppTab.MULTIVIEW,
                     };
-
-                    setImages(prev => [newImage, ...prev]);
-                    overallSuccess++;
-
-                } catch (err) {
-                    console.error(`Failed View ${view.label} for item ${i}`, err);
+                    setImages((prev) => [newImage, ...prev]);
+                    return { ok: true as const };
+                  } catch (fallbackErr) {
+                    console.error(`Failed View ${view.label} for item ${i}`, primaryErr, fallbackErr);
+                    return { ok: false as const };
+                  }
                 }
-            }
+              })
+            );
+
+            viewResults.forEach((result) => {
+              if (result.ok) overallSuccess++;
+            });
         }
 
         if (overallSuccess === 0) throw new Error("Batch processing failed completely.");
@@ -1575,66 +1716,128 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku }) => {
           {renderWorkspace()}
         </div>
 
-        {/* History / Gallery */}
+        {/* History / Gallery — shared with SKU Generator */}
         <div className="border-t border-zinc-200 pt-12">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <div>
-                <h2 className="text-xl font-semibold text-zinc-900">History</h2>
-                <p className="text-sm text-zinc-500 mt-1">
-                  Hover for single-image SKU. Select multiple → one SKU with gallery, or separate SKUs.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {selectedImages.length > 0 && onSendToSku && (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={() => handleSendToSku(selectedImages, 'pod-default', 'single-product')}
-                    >
-                      <Package className="w-3.5 h-3.5 mr-1.5" />
-                      FIG-POD · 1 SKU ({selectedImages.length} imgs)
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleSendToSku(selectedImages, 'custom', 'single-product')}
-                    >
-                      <Boxes className="w-3.5 h-3.5 mr-1.5" />
-                      FIG-NOL · 1 SKU ({selectedImages.length} imgs)
-                    </Button>
-                    {selectedImages.length > 1 && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleSendToSku(selectedImages, 'pod-default', 'bulk-products')}
-                        >
-                          {selectedImages.length}× FIG-POD
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleSendToSku(selectedImages, 'custom', 'bulk-products')}
-                        >
-                          {selectedImages.length}× FIG-NOL
-                        </Button>
-                      </>
-                    )}
-                  </>
-                )}
+          <div className="flex flex-col gap-6 mb-8">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-zinc-900">Shared History</h2>
+                  <p className="text-sm text-zinc-500 mt-1 max-w-xl">
+                    Generate images → choose <strong>POD</strong> or <strong>大货</strong> → select carousel (first = hero) → Generate SKU.
+                    History persists across Image Studio and SKU Generator.
+                  </p>
+                </div>
                 {images.length > 0 && (
-                  <Button variant="ghost" size="sm" onClick={() => { setImages([]); setSelectedImageIds(new Set()); }} className="text-slate-500 hover:text-red-500">
-                      <Trash2 className="w-4 h-4 mr-2" /> Clear All
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setImages([]);
+                      setSelectedImageIds(new Set());
+                      setSelectionOrder([]);
+                      clearStoredImages();
+                    }}
+                    className="text-slate-500 hover:text-red-500 shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" /> Clear images
                   </Button>
                 )}
               </div>
+
+              {(onSendToSku || onSendToOptimizer) && (
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 space-y-4">
+                  {onSendToSku && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">SKU line</p>
+                        <div className="studio-tab-group p-1 inline-flex">
+                          <button
+                            type="button"
+                            onClick={() => setSkuLineSelection('pod')}
+                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'pod' ? 'studio-tab-active' : ''}`}
+                          >
+                            <Package className="w-3.5 h-3.5" />
+                            POD · FIG-POD-size
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSkuLineSelection('bulk')}
+                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'bulk' ? 'studio-tab-active' : ''}`}
+                          >
+                            <Boxes className="w-3.5 h-3.5" />
+                            大货 · xxx-REG-size
+                          </button>
+                        </div>
+                      </div>
+
+                      {selectedOrderedImages.length > 1 && (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Listing mode</p>
+                          <div className="studio-tab-group p-1 inline-flex">
+                            <button
+                              type="button"
+                              onClick={() => setGalleryMode('single-product')}
+                              className={`studio-tab text-xs ${galleryMode === 'single-product' ? 'studio-tab-active' : ''}`}
+                            >
+                              1 SKU · {selectedOrderedImages.length} imgs
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGalleryMode('bulk-products')}
+                              className={`studio-tab text-xs ${galleryMode === 'bulk-products' ? 'studio-tab-active' : ''}`}
+                            >
+                              {selectedOrderedImages.length}× separate SKUs
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedOrderedImages.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-xs text-zinc-600">
+                        <span className="font-medium text-indigo-700">{selectedOrderedImages.length} selected</span>
+                        {' · '}
+                        #{1} hero
+                        {selectedOrderedImages.length > 1 && ` · #2–${selectedOrderedImages.length} gallery`}
+                      </p>
+                      {onSendToSku && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleSendToSku(selectedOrderedImages, galleryMode)}
+                        >
+                          Generate {skuLineSelection === 'pod' ? 'POD' : '大货'} SKU
+                          <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                        </Button>
+                      )}
+                      {onSendToOptimizer && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleSendToOptimizer(selectedOrderedImages)}
+                        >
+                          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                          Push to Optimizer
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">
+                      Select images below — click order = carousel sequence (1st = main image).
+                    </p>
+                  )}
+                </div>
+              )}
           </div>
           <ImageGrid
             images={images}
             onDelete={handleDelete}
             selectedIds={selectedImageIds}
-            onToggleSelect={onSendToSku ? toggleImageSelection : undefined}
-            onSendToSku={onSendToSku ? handleSendToSku : undefined}
+            selectionOrder={selectionOrder}
+            onToggleSelect={onSendToSku || onSendToOptimizer ? toggleImageSelection : undefined}
+            onSendToSku={onSendToSku ? (imgs) => handleSendToSku(imgs, 'single-product') : undefined}
+            skuLine={skuLineSelection}
           />
         </div>
         

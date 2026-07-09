@@ -28,6 +28,8 @@ export interface ProductData {
   mainImageSrc: string;
   /** Additional product gallery images (Shopify Image Position 2+). */
   galleryImageSrcs?: string[];
+  /** SKU-linked filenames parallel to main + gallery (for Shopify upload). */
+  imageFileNames?: string[];
 }
 
 export interface ExportItem {

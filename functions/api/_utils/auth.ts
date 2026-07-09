@@ -23,6 +23,9 @@ export interface Env {
   PROXY_TEXT_MODEL?: string;
   /** Override proxy chat model for vision tasks (default qwen3-vl-flash). */
   PROXY_VISION_MODEL?: string;
+  /** Shopify Admin API — product publish from SKU Generator. */
+  SHOPIFY_ACCESS_TOKEN?: string;
+  SHOPIFY_STORE_NAME?: string;
 }
 
 export function jsonResponse(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {

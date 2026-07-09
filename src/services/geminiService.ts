@@ -6,7 +6,7 @@
 // - `ensureApiKey` was tied to the old in-browser AI Studio "select key"
 //   flow; it's no longer needed because the server holds the key. Kept as
 //   a no-op stub so existing call sites don't have to change.
-// - `generateImageFromGemini` routes to /api/gemini-generate or /api/openai-generate by model.
+// - `generateImageFromGemini` supports preferProxy + productDescription for local Multi-View fallback.
 import { AspectRatio, ModelType } from '../types';
 import { getImageGenerateEndpoint } from '../utils/imageModels';
 import { apiFetch } from './authClient';
@@ -28,12 +28,19 @@ export const analyzeImage = async (base64Image: string): Promise<string> => {
   }
 };
 
+export type ImageGenOptions = {
+  productDescription?: string;
+  preferProxy?: boolean;
+  onMode?: (mode: string) => void;
+};
+
 export const generateImageFromGemini = async (
   prompt: string,
   aspectRatio: AspectRatio,
   model: ModelType,
   referenceImage?: string,
-  referenceImages?: string[]
+  referenceImages?: string[],
+  options?: ImageGenOptions
 ): Promise<string> => {
   const payload: Record<string, unknown> = {
     prompt,
@@ -47,8 +54,16 @@ export const generateImageFromGemini = async (
     payload.referenceImage = referenceImage;
   }
 
+  if (options?.productDescription) {
+    payload.productDescription = options.productDescription;
+  }
+  if (options?.preferProxy) {
+    payload.preferProxy = true;
+  }
+
   const endpoint = getImageGenerateEndpoint(model);
-  const data = await apiFetch<{ image: string }>(endpoint, payload);
+  const data = await apiFetch<{ image: string; mode?: string }>(endpoint, payload);
   if (!data.image) throw new Error('No image returned from server.');
+  if (data.mode) options?.onMode?.(data.mode);
   return data.image;
 };
