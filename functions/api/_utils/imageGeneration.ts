@@ -38,9 +38,11 @@ export type ImageGenRequest = {
   preferProxy?: boolean;
 };
 
-const DIRECT_GEMINI_TIMEOUT_MS = 45_000;
-const DIRECT_GEMINI_REFERENCE_TIMEOUT_MS = 120_000;
-const PROXY_GEMINI_TIMEOUT_MS = 90_000;
+const DIRECT_GEMINI_TIMEOUT_MS = 35_000;
+const DIRECT_GEMINI_REFERENCE_TIMEOUT_MS = 90_000;
+/** When proxy fallback exists, fail fast on direct Google and use proxy text mode. */
+const DIRECT_GEMINI_REFERENCE_FAST_TIMEOUT_MS = 40_000;
+const PROXY_GEMINI_TIMEOUT_MS = 75_000;
 
 async function fetchWithTimeout(
   url: string,
@@ -166,7 +168,7 @@ async function generateViaProxyImagesApi(
     model: body.model,
     prompt: body.prompt,
     size,
-    quality: 'high',
+    quality: 'medium',
     response_format: 'b64_json',
   };
 
@@ -256,7 +258,8 @@ async function generateViaProxyGeminiNative(
 async function generateViaGeminiNative(
   apiKey: string,
   body: ImageGenRequest,
-  referenceImages: string[]
+  referenceImages: string[],
+  timeoutMs?: number
 ): Promise<string> {
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
   for (const img of referenceImages) {
@@ -267,8 +270,9 @@ async function generateViaGeminiNative(
   }
   parts.push({ text: body.prompt });
 
-  const timeoutMs =
-    referenceImages.length > 0 ? DIRECT_GEMINI_REFERENCE_TIMEOUT_MS : DIRECT_GEMINI_TIMEOUT_MS;
+  const effectiveTimeout =
+    timeoutMs ??
+    (referenceImages.length > 0 ? DIRECT_GEMINI_REFERENCE_TIMEOUT_MS : DIRECT_GEMINI_TIMEOUT_MS);
 
   const upstream = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${body.model}:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -285,7 +289,7 @@ async function generateViaGeminiNative(
         },
       }),
     },
-    timeoutMs,
+    effectiveTimeout,
     'Direct Gemini API'
   );
 
@@ -380,8 +384,16 @@ export async function generateImageResult(env: Env, body: ImageGenRequest): Prom
     }
 
     if (!body.preferProxy && directKey && referenceImages.length > 0) {
+      const directTimeout = proxy.useProxy
+        ? DIRECT_GEMINI_REFERENCE_FAST_TIMEOUT_MS
+        : DIRECT_GEMINI_REFERENCE_TIMEOUT_MS;
       try {
-        const image = await generateViaGeminiNative(directKey, body, referenceImages);
+        const image = await generateViaGeminiNative(
+          directKey,
+          body,
+          referenceImages,
+          directTimeout
+        );
         return { image, mode: 'direct-reference' };
       } catch (err: unknown) {
         errors.push(formatUpstreamError('Direct Gemini', err).message);
@@ -398,18 +410,6 @@ export async function generateImageResult(env: Env, body: ImageGenRequest): Prom
     }
 
     if (proxy.useProxy && !body.preferProxy && referenceImages.length > 0) {
-      try {
-        const image = await generateViaProxyGeminiNative(
-          proxy.baseUrl,
-          proxy.token,
-          body,
-          referenceImages
-        );
-        return { image, mode: 'proxy-reference' };
-      } catch (err: unknown) {
-        errors.push(formatUpstreamError('Proxy Gemini (with reference)', err).message);
-      }
-
       try {
         const description =
           body.productDescription?.trim() ||

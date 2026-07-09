@@ -8,8 +8,8 @@
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
-// - Multi-View: Gemini + reference first (VPN/fast path); proxy text fallback only if needed.
-// - Shared History: POD vs 大货 SKU line, carousel selection order, unified localStorage with SKU Generator.
+// - Multi-View: parallel generation with pre-analyze + server-side fast proxy fallback.
+// - Batch tabs: 3-wide parallel pool (no artificial delays between items).
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -36,7 +36,8 @@ import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Load
 // - Shared History: POD vs 大货 SKU line; push selected images to Product Optimizer.
 import { SkuHandoff, SkuHandoffMode, createSkuHandoffFromImages, orderedImagesFromSelection } from './utils/skuHandoff';
 import { createOptimizerHandoffFromImages } from './utils/optimizerHandoff';
-import { compressDataUrl } from './utils/imageUtils';
+import { prepareReferenceForApi } from './utils/imageApiPrep';
+import { runPool, IMAGE_GEN_POOL_SIZE } from './utils/runPool';
 import {
   getStoredImages,
   setStoredImages,
@@ -159,11 +160,12 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
         return;
       }
 
+      const refForApi = await prepareReferenceForApi(referenceImg);
       const base64Image = await generateImageFromGemini(
         prompt, 
         aspectRatio, 
         targetModel, 
-        referenceImg || undefined
+        refForApi
       );
 
       const newImage: GeneratedImage = {
@@ -254,7 +256,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
       setIsGenerating(true);
       setError(null);
       const targetModel = model;
-      let successCount = 0;
+        let successCount = 0;
 
       try {
         const canProceed = await ensureApiKey(targetModel);
@@ -264,38 +266,42 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
             return;
         }
 
-        for (let i = 0; i < bgBatchFiles.length; i++) {
-            const { preview, file } = bgBatchFiles[i];
-            setProgressMessage(`Processing Item ${i + 1} of ${bgBatchFiles.length}...`);
+        const fullPrompt = `Change the background of this image to ${color}. ${promptDetails} Keep the main subject exactly as is.`;
 
-            if (i > 0) await new Promise(r => setTimeout(r, 1000));
-
+        const results = await runPool(
+          bgBatchFiles,
+          IMAGE_GEN_POOL_SIZE,
+          async ({ preview, file }) => {
             try {
-                const fullPrompt = `Change the background of this image to ${color}. ${promptDetails} Keep the main subject exactly as is.`;
-                
-                const generatedBase64 = await generateImageFromGemini(
-                    fullPrompt,
-                    '1:1',
-                    targetModel,
-                    preview
-                );
+              const ref = await prepareReferenceForApi(preview);
+              const generatedBase64 = await generateImageFromGemini(
+                fullPrompt,
+                '1:1',
+                targetModel,
+                ref
+              );
 
-                const newImage: GeneratedImage = {
-                    id: crypto.randomUUID(),
-                    url: generatedBase64,
-                    prompt: `Batch (${file.name}): ${color}`,
-                    timestamp: Date.now(),
-                    aspectRatio: '1:1',
-                    model: targetModel,
-                    tab: AppTab.BACKGROUND
-                };
+              const newImage: GeneratedImage = {
+                id: crypto.randomUUID(),
+                url: generatedBase64,
+                prompt: `Batch (${file.name}): ${color}`,
+                timestamp: Date.now(),
+                aspectRatio: '1:1',
+                model: targetModel,
+                tab: AppTab.BACKGROUND,
+              };
 
-                setImages(prev => [newImage, ...prev]);
-                successCount++;
+              setImages((prev) => [newImage, ...prev]);
+              return true;
             } catch (innerErr) {
-                console.error(`Error processing batch item ${i}:`, innerErr);
+              console.error('Background batch item failed:', innerErr);
+              return false;
             }
-        }
+          },
+          (done, total) => setProgressMessage(`Background batch ${done}/${total}…`)
+        );
+
+        successCount = results.filter(Boolean).length;
 
         if (successCount === 0) {
             throw new Error("Batch processing failed for all items.");
@@ -322,8 +328,6 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
     setProgressMessage('Preparing reference image…');
 
     const ratio: AspectRatio = '1:1';
-    const completedViews: string[] = [];
-    let lastMode = '';
 
     try {
       const targetModel = resolveGeminiImageModel(model);
@@ -334,97 +338,61 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
           return;
       }
 
-      const refForApi = await compressDataUrl(multiViewImage);
-      setProgressMessage('Generating Top, Side, and Zoom in parallel (Gemini + reference)…');
-
-      type ViewOutcome = { viewIndex: number; image?: GeneratedImage; error?: unknown };
-
-      const runView = async (
-        viewIndex: number,
-        useProxyFallback: boolean,
-        productDescription?: string
-      ): Promise<ViewOutcome> => {
-        const view = MULTIVIEW_ANGLES[viewIndex];
-        const fullPrompt = useProxyFallback
-          ? buildMultiViewPromptWithProduct(view.key, productDescription || 'product')
-          : buildMultiViewPrompt(view.key);
-
-        const base64Image = await generateImageFromGemini(
-          fullPrompt,
-          ratio,
-          targetModel,
-          useProxyFallback ? undefined : refForApi,
-          undefined,
-          useProxyFallback
-            ? { productDescription, preferProxy: true, onMode: (m) => { lastMode = m; } }
-            : { onMode: (m) => { lastMode = m; } }
-        );
-
-        const newImage: GeneratedImage = {
-          id: crypto.randomUUID(),
-          url: base64Image,
-          prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
-          timestamp: Date.now(),
-          aspectRatio: ratio,
-          model: targetModel,
-          tab: AppTab.MULTIVIEW,
-        };
-
-        completedViews.push(view.label);
-        setProgressMessage(
-          `Done: ${completedViews.join(', ')}${completedViews.length < MULTIVIEW_ANGLES.length ? ' — still generating…' : ''}`
-        );
-        setImages((prev) => [newImage, ...prev]);
-        return { viewIndex, image: newImage };
-      };
-
-      const phase1 = await Promise.all(
-        MULTIVIEW_ANGLES.map((_, index) =>
-          runView(index, false).catch((error) => ({ viewIndex: index, error }))
-        )
-      );
-
-      const failed = phase1.filter(
-        (r): r is { viewIndex: number; error?: unknown } => !('image' in r && r.image)
-      );
-
-      if (failed.length > 0) {
-        setProgressMessage(
-          `${failed.length} view(s) need proxy fallback — analyzing product…`
-        );
-        let productDescription = 'product';
-        try {
-          productDescription = await analyzeImage(refForApi);
-        } catch {
-          productDescription = 'product';
-        }
-
-        setProgressMessage(`Retrying ${failed.length} view(s) via studio proxy…`);
-        await Promise.all(
-          failed.map(({ viewIndex }) =>
-            runView(viewIndex, true, productDescription).catch((error) => {
-              console.error(`Proxy fallback failed for ${MULTIVIEW_ANGLES[viewIndex].label}:`, error);
-              return { viewIndex, error };
-            })
-          )
-        );
+      const refForApi = await prepareReferenceForApi(multiViewImage);
+      let productDescription = 'product';
+      try {
+        productDescription = await analyzeImage(refForApi ?? multiViewImage);
+      } catch {
+        productDescription = 'product';
       }
 
-      const successCount = completedViews.length;
+      setProgressMessage('Generating Top, Side, and Zoom in parallel…');
+
+      const genOptions = { productDescription };
+
+      const results = await runPool(
+        MULTIVIEW_ANGLES,
+        IMAGE_GEN_POOL_SIZE,
+        async (view) => {
+          try {
+            const fullPrompt = buildMultiViewPrompt(view.key);
+            const base64Image = await generateImageFromGemini(
+              fullPrompt,
+              ratio,
+              targetModel,
+              refForApi,
+              undefined,
+              genOptions
+            );
+
+            const newImage: GeneratedImage = {
+              id: crypto.randomUUID(),
+              url: base64Image,
+              prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
+              timestamp: Date.now(),
+              aspectRatio: ratio,
+              model: targetModel,
+              tab: AppTab.MULTIVIEW,
+            };
+
+            setImages((prev) => [newImage, ...prev]);
+            return newImage;
+          } catch (err) {
+            console.error(`Failed ${view.label} view:`, err);
+            return null;
+          }
+        },
+        (done, total) => setProgressMessage(`Multi-View ${done}/${total}…`)
+      );
+
+      const successCount = results.filter((r): r is GeneratedImage => r !== null).length;
 
       if (successCount === 0) {
-        const firstFailed = phase1.find((r) => r.error);
-        const reason =
-          firstFailed?.error instanceof Error
-            ? firstFailed.error.message
-            : 'Failed to generate any views.';
-        throw new Error(reason);
+        throw new Error('Failed to generate any views. Try a clearer reference photo or check VPN/proxy.');
       }
 
       if (successCount < MULTIVIEW_ANGLES.length) {
         setError(`Only ${successCount}/${MULTIVIEW_ANGLES.length} views succeeded. You can retry for the missing angles.`);
-      } else if (lastMode === 'direct-reference') {
-        setProgressMessage('All 3 views done (direct Gemini + reference).');
       }
 
     } catch (err: any) {
@@ -432,7 +400,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
         setError(err.message || "Failed to generate multi-view images.");
     } finally {
         setIsGenerating(false);
-        setTimeout(() => setProgressMessage(null), 2000);
+        setProgressMessage(null);
     }
   };
 
@@ -459,23 +427,32 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
 
         let overallSuccess = 0;
 
-        for (let i = 0; i < multiViewBatchFiles.length; i++) {
-            const { preview, file } = multiViewBatchFiles[i];
-            const refForApi = await compressDataUrl(preview);
-
-            setProgressMessage(`Item ${i + 1}/${multiViewBatchFiles.length}: Generating 3 views (Gemini + reference)…`);
-
+        const fileResults = await runPool(
+          multiViewBatchFiles,
+          2,
+          async ({ preview, file }, fileIndex) => {
+            const refForApi = await prepareReferenceForApi(preview);
             let productDescription = 'product';
+            try {
+              productDescription = await analyzeImage(refForApi ?? preview);
+            } catch {
+              productDescription = 'product';
+            }
+            const genOptions = { productDescription };
 
-            const viewResults = await Promise.all(
-              MULTIVIEW_ANGLES.map(async (view, vIdx) => {
+            const viewResults = await runPool(
+              MULTIVIEW_ANGLES,
+              IMAGE_GEN_POOL_SIZE,
+              async (view) => {
                 try {
                   const fullPrompt = buildMultiViewPrompt(view.key);
                   const base64Image = await generateImageFromGemini(
                     fullPrompt,
                     ratio,
                     targetModel,
-                    refForApi
+                    refForApi,
+                    undefined,
+                    genOptions
                   );
                   const newImage: GeneratedImage = {
                     id: crypto.randomUUID(),
@@ -487,48 +464,21 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
                     tab: AppTab.MULTIVIEW,
                   };
                   setImages((prev) => [newImage, ...prev]);
-                  return { ok: true as const };
-                } catch (primaryErr) {
-                  try {
-                    if (productDescription === 'product') {
-                      try {
-                        productDescription = await analyzeImage(refForApi);
-                      } catch {
-                        productDescription = 'product';
-                      }
-                    }
-                    const fallbackPrompt = buildMultiViewPromptWithProduct(view.key, productDescription);
-                    const base64Image = await generateImageFromGemini(
-                      fallbackPrompt,
-                      ratio,
-                      targetModel,
-                      undefined,
-                      undefined,
-                      { productDescription, preferProxy: true }
-                    );
-                    const newImage: GeneratedImage = {
-                      id: crypto.randomUUID(),
-                      url: base64Image,
-                      prompt: `Batch (${file.name}): ${view.label}`,
-                      timestamp: Date.now(),
-                      aspectRatio: ratio,
-                      model: targetModel,
-                      tab: AppTab.MULTIVIEW,
-                    };
-                    setImages((prev) => [newImage, ...prev]);
-                    return { ok: true as const };
-                  } catch (fallbackErr) {
-                    console.error(`Failed View ${view.label} for item ${i}`, primaryErr, fallbackErr);
-                    return { ok: false as const };
-                  }
+                  return true;
+                } catch (err) {
+                  console.error(`Batch item ${fileIndex + 1} ${view.label} failed:`, err);
+                  return false;
                 }
-              })
+              }
             );
 
-            viewResults.forEach((result) => {
-              if (result.ok) overallSuccess++;
-            });
-        }
+            return viewResults.filter(Boolean).length;
+          },
+          (done, total) =>
+            setProgressMessage(`Multi-View batch ${done}/${total} products…`)
+        );
+
+        overallSuccess = fileResults.reduce((sum, n) => sum + n, 0);
 
         if (overallSuccess === 0) throw new Error("Batch processing failed completely.");
 
@@ -551,7 +501,6 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
     setIsGenerating(true);
     setError(null);
     const targetModel = model;
-    let successCount = 0;
 
     try {
         const canProceed = await ensureApiKey(targetModel);
@@ -561,39 +510,41 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
             return;
         }
 
-        for (let i = 0; i < batchFiles.length; i++) {
-            const { preview } = batchFiles[i];
-            setProgressMessage(`Processing Item ${i + 1} of ${batchFiles.length}...`);
-
-            if (i > 0) await new Promise(r => setTimeout(r, 1000));
-
+        const results = await runPool(
+          batchFiles,
+          IMAGE_GEN_POOL_SIZE,
+          async ({ preview }, i) => {
             try {
-                const prompt = promptGenerator(i);
-                
-                const generatedBase64 = await generateImageFromGemini(
-                    prompt,
-                    aspectRatio,
-                    targetModel,
-                    preview
-                );
+              const prompt = promptGenerator(i);
+              const ref = await prepareReferenceForApi(preview);
+              const generatedBase64 = await generateImageFromGemini(
+                prompt,
+                aspectRatio,
+                targetModel,
+                ref
+              );
 
-                const newImage: GeneratedImage = {
-                    id: crypto.randomUUID(),
-                    url: generatedBase64,
-                    prompt: `Batch (${label}): ${prompt.substring(0, 30)}...`,
-                    timestamp: Date.now(),
-                    aspectRatio: aspectRatio,
-                    model: targetModel,
-                    tab: AppTab.SCENE
-                };
+              const newImage: GeneratedImage = {
+                id: crypto.randomUUID(),
+                url: generatedBase64,
+                prompt: `Batch (${label}): ${prompt.substring(0, 30)}...`,
+                timestamp: Date.now(),
+                aspectRatio,
+                model: targetModel,
+                tab: AppTab.SCENE,
+              };
 
-                setImages(prev => [newImage, ...prev]);
-                successCount++;
+              setImages((prev) => [newImage, ...prev]);
+              return true;
             } catch (innerErr) {
-                console.error(`Error processing batch item ${i}:`, innerErr);
+              console.error(`Scene batch item ${i} failed:`, innerErr);
+              return false;
             }
-        }
+          },
+          (done, total) => setProgressMessage(`Scene batch ${done}/${total}…`)
+        );
 
+        const successCount = results.filter(Boolean).length;
         if (successCount === 0) {
             throw new Error("Batch processing failed for all items.");
         }
@@ -646,36 +597,42 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
     setProgressMessage("Analyzing image...");
 
     try {
-      const objectDescription = await analyzeImage(sceneImage);
+      const sceneRef = await prepareReferenceForApi(sceneImage);
+      const objectDescription = await analyzeImage(sceneRef ?? sceneImage!);
       const prompts = buildSceneSmartPrompts(type, true, objectDescription, (items, count) =>
         shuffleArray(items).slice(0, count)
       );
 
-      let successCount = 0;
       const targetModel = model;
 
-      for (let i = 0; i < prompts.length; i++) {
-        setProgressMessage(`Generating ${type} variation ${i + 1} of ${prompts.length}...`);
-        if (i > 0) await new Promise(r => setTimeout(r, 1500)); 
-
-        try {
+      const results = await runPool(
+        prompts,
+        IMAGE_GEN_POOL_SIZE,
+        async (prompt) => {
+          try {
             const base64Image = await generateImageFromGemini(
-              prompts[i], '1:1', targetModel, sceneImage
+              prompt, '1:1', targetModel, sceneRef
             );
             const newImage: GeneratedImage = {
-                id: crypto.randomUUID(),
-                url: base64Image,
-                prompt: prompts[i],
-                timestamp: Date.now(),
-                aspectRatio: '1:1',
-                model: targetModel,
-                tab: AppTab.SCENE
+              id: crypto.randomUUID(),
+              url: base64Image,
+              prompt,
+              timestamp: Date.now(),
+              aspectRatio: '1:1',
+              model: targetModel,
+              tab: AppTab.SCENE,
             };
-            setImages(prev => [newImage, ...prev]);
-            successCount++;
-        } catch (e) { console.error(e); }
-      }
-      
+            setImages((prev) => [newImage, ...prev]);
+            return true;
+          } catch (e) {
+            console.error(e);
+            return false;
+          }
+        },
+        (done, total) => setProgressMessage(`Smart ${type} ${done}/${total}…`)
+      );
+
+      const successCount = results.filter(Boolean).length;
       if (successCount === 0) throw new Error("Failed to generate any images.");
 
     } catch (err: any) {
@@ -816,12 +773,14 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
     fileLabel?: string
   ) => {
     const prompt = buildLogoPlacementPrompt(logoPosition, logoSizePercent, logoPrompt);
+    const productRef = await prepareReferenceForApi(productPreview);
+    const logoRef = await prepareReferenceForApi(logoImage);
     const generatedBase64 = await generateImageFromGemini(
       prompt,
       logoAspectRatio,
       model,
       undefined,
-      [productPreview, logoImage!]
+      [productRef ?? productPreview, logoRef ?? logoImage!]
     );
 
     const newImage: GeneratedImage = {
@@ -853,7 +812,6 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
 
     setError(null);
     setIsGenerating(true);
-    let successCount = 0;
 
     try {
       const canProceed = await ensureApiKey(model);
@@ -863,20 +821,22 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
         return;
       }
 
-      for (let i = 0; i < logoProductFiles.length; i++) {
-        const { preview, file } = logoProductFiles[i];
-        setProgressMessage(`Processing ${i + 1} of ${logoProductFiles.length}...`);
+      const results = await runPool(
+        logoProductFiles,
+        IMAGE_GEN_POOL_SIZE,
+        async ({ preview, file }) => {
+          try {
+            await generateLogoComposite(preview, file.name);
+            return true;
+          } catch (innerErr) {
+            console.error('Logo item failed:', innerErr);
+            return false;
+          }
+        },
+        (done, total) => setProgressMessage(`Logo batch ${done}/${total}…`)
+      );
 
-        if (i > 0) await new Promise(r => setTimeout(r, 1000));
-
-        try {
-          await generateLogoComposite(preview, file.name);
-          successCount++;
-        } catch (innerErr) {
-          console.error(`Logo item ${i} failed:`, innerErr);
-        }
-      }
-
+      const successCount = results.filter(Boolean).length;
       if (successCount === 0) {
         throw new Error('Logo placement failed for all images.');
       }
