@@ -1,7 +1,8 @@
-// Changes: Shopify publish uses SKU-linked image filenames; coerces tags string/array.
+// Changes: Shopify publish — default variant inventory qty 1000; SKU-linked image filenames.
 import { Env } from './auth';
 
 const API_VERSION = '2024-01';
+const DEFAULT_VARIANT_INVENTORY_QTY = 1000;
 
 export type ShopifyProductInput = {
   title: string;
@@ -126,6 +127,7 @@ function mapVariantsToShopify(variants: ShopifyVariantInput[]) {
       taxable: false,
       inventory_management: 'shopify',
       inventory_policy: 'deny',
+      inventory_quantity: DEFAULT_VARIANT_INVENTORY_QTY,
     };
 
     if (variant.compareAtPrice?.trim()) {
@@ -171,6 +173,9 @@ function buildProductPayload(body: ShopifyPublishRequest) {
             price: '0.00',
             requires_shipping: true,
             taxable: false,
+            inventory_management: 'shopify',
+            inventory_policy: 'deny',
+            inventory_quantity: DEFAULT_VARIANT_INVENTORY_QTY,
           },
         ];
 

@@ -1,5 +1,6 @@
-// Changes: Shopify CSV export with multi-image gallery rows per product.
+// Changes: Shopify CSV export with multi-image gallery rows; default inventory qty 1000 per variant.
 import Papa from 'papaparse';
+import { DEFAULT_VARIANT_INVENTORY_QTY } from './inventoryDefaults';
 
 export interface Variant {
   id: string;
@@ -104,6 +105,7 @@ export const exportCSV = (items: ExportItem[], filename: string = 'products') =>
       row["Variant Compare At Price"] = variant.compareAtPrice;
       row["Variant Grams"] = "0";
       row["Variant Inventory Tracker"] = "shopify";
+      row["Variant Inventory Qty"] = String(DEFAULT_VARIANT_INVENTORY_QTY);
       row["Variant Inventory Policy"] = "deny";
       row["Variant Fulfillment Service"] = "manual";
       row["Variant Requires Shipping"] = "TRUE";
