@@ -8,8 +8,7 @@
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
-// - Multi-View: parallel generation with pre-analyze + server-side fast proxy fallback.
-// - Batch tabs: 3-wide parallel pool (no artificial delays between items).
+// Changes: P0 workflow UX — report selection state; sticky history action dock; equal SKU/Optimizer CTAs.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -38,6 +37,7 @@ import { SkuHandoff, SkuHandoffMode, createSkuHandoffFromImages, orderedImagesFr
 import { createOptimizerHandoffFromImages } from './utils/optimizerHandoff';
 import { prepareReferenceForApi } from './utils/imageApiPrep';
 import { runPool, IMAGE_GEN_POOL_SIZE } from './utils/runPool';
+import { StudioWorkflowSnapshot } from './components/WorkflowBar';
 import {
   getStoredImages,
   setStoredImages,
@@ -61,9 +61,14 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 interface ImageStudioAppProps {
   onSendToSku?: (handoff: SkuHandoff) => void;
   onSendToOptimizer?: (handoff: import('./utils/optimizerHandoff').OptimizerHandoff) => void;
+  onWorkflowChange?: (snapshot: StudioWorkflowSnapshot) => void;
 }
 
-const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOptimizer }) => {
+const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
+  onSendToSku,
+  onSendToOptimizer,
+  onWorkflowChange,
+}) => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
   const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
   const [images, setImages] = useState<GeneratedImage[]>(() => getStoredImages());
@@ -237,6 +242,14 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
     () => orderedImagesFromSelection(images, selectionOrder.filter((id) => selectedImageIds.has(id))),
     [images, selectionOrder, selectedImageIds]
   );
+
+  useEffect(() => {
+    onWorkflowChange?.({
+      selectedCount: selectedOrderedImages.length,
+      totalImages: images.length,
+      skuLine: skuLineSelection,
+    });
+  }, [selectedOrderedImages.length, images.length, skuLineSelection, onWorkflowChange]);
 
   // --- Background Tab Handlers ---
   const handleBgGenerate = async (color: string, promptDetails: string) => {
@@ -1644,11 +1657,11 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
       />
 
       {/* Main Content Area */}
-      <main className="pt-32 px-4 max-w-7xl mx-auto min-h-screen flex flex-col pb-20">
+      <main className="studio-main-offset px-4 max-w-7xl mx-auto min-h-screen flex flex-col pb-20">
         
         {/* Progress Indicator */}
         {isGenerating && (
-           <div className="fixed top-32 left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-md border border-zinc-200 text-zinc-900 px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
+           <div className="fixed top-[var(--chrome-stack-h,8rem)] left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-md border border-zinc-200 text-zinc-900 px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
              <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
              <span className="text-sm font-medium">{progressMessage || "Processing..."}</span>
            </div>
@@ -1678,118 +1691,132 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({ onSendToSku, onSendToOp
 
         {/* History / Gallery — shared with SKU Generator */}
         <div className="border-t border-zinc-200 pt-12">
-          <div className="flex flex-col gap-6 mb-8">
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-zinc-900">Shared History</h2>
-                  <p className="text-sm text-zinc-500 mt-1 max-w-xl">
-                    Generate images → choose <strong>POD</strong> or <strong>大货</strong> → select carousel (first = hero) → Generate SKU.
-                    History persists across Image Studio and SKU Generator.
-                  </p>
-                </div>
-                {images.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setImages([]);
-                      setSelectedImageIds(new Set());
-                      setSelectionOrder([]);
-                      clearStoredImages();
-                    }}
-                    className="text-slate-500 hover:text-red-500 shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" /> Clear images
-                  </Button>
-                )}
-              </div>
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-xl font-semibold text-zinc-900">Shared History</h2>
+              <p className="text-sm text-zinc-500 mt-1 max-w-xl">
+                Select images in order (1st = hero). Then push to <strong>SKU</strong> for new listings or{' '}
+                <strong>Optimizer</strong> to replace images on live products.
+              </p>
+            </div>
+            {images.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setImages([]);
+                  setSelectedImageIds(new Set());
+                  setSelectionOrder([]);
+                  clearStoredImages();
+                }}
+                className="text-slate-500 hover:text-red-500 shrink-0"
+              >
+                <Trash2 className="w-4 h-4 mr-2" /> Clear images
+              </Button>
+            )}
+          </div>
 
-              {(onSendToSku || onSendToOptimizer) && (
-                <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 space-y-4">
-                  {onSendToSku && (
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">SKU line</p>
-                        <div className="studio-tab-group p-1 inline-flex">
-                          <button
-                            type="button"
-                            onClick={() => setSkuLineSelection('pod')}
-                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'pod' ? 'studio-tab-active' : ''}`}
-                          >
-                            <Package className="w-3.5 h-3.5" />
-                            POD · FIG-POD-size
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSkuLineSelection('bulk')}
-                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'bulk' ? 'studio-tab-active' : ''}`}
-                          >
-                            <Boxes className="w-3.5 h-3.5" />
-                            大货 · xxx-REG-size
-                          </button>
-                        </div>
+          {(onSendToSku || onSendToOptimizer) && (
+            <div className="history-action-dock mb-6">
+              {onSendToSku && (
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">SKU line</p>
+                    <div className="studio-tab-group p-1 inline-flex">
+                      <button
+                        type="button"
+                        onClick={() => setSkuLineSelection('pod')}
+                        className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'pod' ? 'studio-tab-active' : ''}`}
+                      >
+                        <Package className="w-3.5 h-3.5" />
+                        POD · FIG-POD-size
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSkuLineSelection('bulk')}
+                        className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'bulk' ? 'studio-tab-active' : ''}`}
+                      >
+                        <Boxes className="w-3.5 h-3.5" />
+                        大货 · xxx-REG-size
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedOrderedImages.length > 1 && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Listing mode</p>
+                      <div className="studio-tab-group p-1 inline-flex">
+                        <button
+                          type="button"
+                          onClick={() => setGalleryMode('single-product')}
+                          className={`studio-tab text-xs ${galleryMode === 'single-product' ? 'studio-tab-active' : ''}`}
+                        >
+                          1 SKU · {selectedOrderedImages.length} imgs
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGalleryMode('bulk-products')}
+                          className={`studio-tab text-xs ${galleryMode === 'bulk-products' ? 'studio-tab-active' : ''}`}
+                        >
+                          {selectedOrderedImages.length}× separate SKUs
+                        </button>
                       </div>
-
-                      {selectedOrderedImages.length > 1 && (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Listing mode</p>
-                          <div className="studio-tab-group p-1 inline-flex">
-                            <button
-                              type="button"
-                              onClick={() => setGalleryMode('single-product')}
-                              className={`studio-tab text-xs ${galleryMode === 'single-product' ? 'studio-tab-active' : ''}`}
-                            >
-                              1 SKU · {selectedOrderedImages.length} imgs
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setGalleryMode('bulk-products')}
-                              className={`studio-tab text-xs ${galleryMode === 'bulk-products' ? 'studio-tab-active' : ''}`}
-                            >
-                              {selectedOrderedImages.length}× separate SKUs
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
+                </div>
+              )}
 
-                  {selectedOrderedImages.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-xs text-zinc-600">
-                        <span className="font-medium text-indigo-700">{selectedOrderedImages.length} selected</span>
-                        {' · '}
-                        #{1} hero
-                        {selectedOrderedImages.length > 1 && ` · #2–${selectedOrderedImages.length} gallery`}
-                      </p>
-                      {onSendToSku && (
+              {selectedOrderedImages.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-zinc-600">
+                    <span className="font-medium text-indigo-700">{selectedOrderedImages.length} selected</span>
+                    {' · '}
+                    #{1} hero
+                    {selectedOrderedImages.length > 1 && ` · #2–${selectedOrderedImages.length} gallery`}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {onSendToSku && (
+                      <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">
+                          New product
+                        </p>
                         <Button
                           size="sm"
+                          className="w-full"
                           onClick={() => handleSendToSku(selectedOrderedImages, galleryMode)}
                         >
+                          <Package className="w-3.5 h-3.5 mr-1.5" />
                           Generate {skuLineSelection === 'pod' ? 'POD' : '大货'} SKU
                           <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                         </Button>
-                      )}
-                      {onSendToOptimizer && (
+                      </div>
+                    )}
+                    {onSendToOptimizer && (
+                      <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 space-y-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-700">
+                          Existing Shopify product
+                        </p>
                         <Button
                           size="sm"
-                          variant="secondary"
+                          className="w-full bg-violet-600 hover:bg-violet-700 text-white"
                           onClick={() => handleSendToOptimizer(selectedOrderedImages)}
                         >
                           <Sparkles className="w-3.5 h-3.5 mr-1.5" />
                           Push to Optimizer
+                          <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                         </Button>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-zinc-500">
-                      Select images below — click order = carousel sequence (1st = main image).
-                    </p>
-                  )}
+                      </div>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <p className="text-xs text-zinc-500">
+                  Select images in the grid below — click order = carousel sequence (1st = main image).
+                </p>
               )}
-          </div>
+            </div>
+          )}
+
           <ImageGrid
             images={images}
             onDelete={handleDelete}

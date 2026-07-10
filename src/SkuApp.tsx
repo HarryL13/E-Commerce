@@ -593,7 +593,7 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-8">
+      <main className="studio-main-offset max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
         <AnimatePresence mode="wait">
           {error && (
             <motion.div

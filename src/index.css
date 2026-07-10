@@ -1,4 +1,4 @@
-/* Changes: Professional light studio design system; studio-select for header dropdowns. */
+/* Changes: Workflow bar chrome vars; sticky history action dock; subheader top offset. */
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -19,7 +19,17 @@
   }
 
   .studio-subheader {
-    @apply fixed top-14 left-0 right-0 z-40 h-16 bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm;
+    @apply fixed left-0 right-0 z-40 h-16 bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm;
+    top: var(--studio-subheader-top, 3.5rem);
+  }
+
+  .studio-main-offset {
+    padding-top: var(--chrome-stack-h, 8rem);
+  }
+
+  .history-action-dock {
+    @apply sticky z-30 rounded-2xl border border-indigo-200 bg-white/95 backdrop-blur-md shadow-md shadow-indigo-500/5 p-4 space-y-4;
+    top: calc(var(--studio-subheader-top, 3.5rem) + 4rem);
   }
 
   .studio-card {

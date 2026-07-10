@@ -1,18 +1,29 @@
-// Changes: Image Studio ↔ Optimizer handoff; shared history; Optimizer module.
-import React, { useState } from 'react';
+// Changes: P0 workflow UX — Studio-first nav, workflow hint bar, chrome height CSS vars for subheaders.
+import React, { useState, useCallback } from 'react';
 import SkuApp from './SkuApp';
 import ImageStudioApp from './ImageStudioApp';
 import ProductOptimizerApp from './ProductOptimizerApp';
 import { Sparkles, Image, Package, Search } from 'lucide-react';
 import { SkuHandoff } from './utils/skuHandoff';
 import { OptimizerHandoff } from './utils/optimizerHandoff';
+import { WorkflowBar, StudioWorkflowSnapshot } from './components/WorkflowBar';
 
-type Module = 'sku' | 'studio' | 'optimizer';
+type Module = 'studio' | 'sku' | 'optimizer';
+
+const CHROME_BASE = '7.5rem';
+const CHROME_WITH_WORKFLOW = '10rem';
+const OPTIMIZER_MAIN_OFFSET = '6rem';
 
 export default function App() {
-  const [activeModule, setActiveModule] = useState<Module>('sku');
+  const [activeModule, setActiveModule] = useState<Module>('studio');
   const [skuHandoff, setSkuHandoff] = useState<SkuHandoff | null>(null);
   const [optimizerHandoff, setOptimizerHandoff] = useState<OptimizerHandoff | null>(null);
+  const [studioWorkflow, setStudioWorkflow] = useState<StudioWorkflowSnapshot>({
+    selectedCount: 0,
+    totalImages: 0,
+    skuLine: 'pod',
+  });
+  const [optimizerPendingCount, setOptimizerPendingCount] = useState(0);
 
   const sendToSku = (handoff: SkuHandoff) => {
     setSkuHandoff(handoff);
@@ -21,12 +32,28 @@ export default function App() {
 
   const sendToOptimizer = (handoff: OptimizerHandoff) => {
     setOptimizerHandoff(handoff);
+    setOptimizerPendingCount(handoff.images.length);
     setActiveModule('optimizer');
   };
 
+  const onStudioWorkflowChange = useCallback((snapshot: StudioWorkflowSnapshot) => {
+    setStudioWorkflow(snapshot);
+  }, []);
+
+  const chromeStackH =
+    activeModule === 'optimizer' ? OPTIMIZER_MAIN_OFFSET : CHROME_WITH_WORKFLOW;
+
   return (
-    <div className="studio-root min-h-screen">
-      <header className="sticky top-0 z-[100] bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm">
+    <div
+      className="studio-root min-h-screen"
+      style={
+        {
+          '--studio-subheader-top': CHROME_WITH_WORKFLOW,
+          '--chrome-stack-h': chromeStackH,
+        } as React.CSSProperties
+      }
+    >
+      <div className="sticky top-0 z-[100] bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 shrink-0">
             <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm">
@@ -39,18 +66,19 @@ export default function App() {
 
           <nav className="studio-tab-group">
             <button
-              onClick={() => setActiveModule('sku')}
-              className={`studio-tab flex items-center gap-1.5 ${activeModule === 'sku' ? 'studio-tab-active' : ''}`}
-            >
-              <Package className="w-3.5 h-3.5" />
-              SKU Generator
-            </button>
-            <button
               onClick={() => setActiveModule('studio')}
               className={`studio-tab flex items-center gap-1.5 ${activeModule === 'studio' ? 'studio-tab-active' : ''}`}
             >
               <Image className="w-3.5 h-3.5" />
               Image Studio
+            </button>
+            <button
+              onClick={() => setActiveModule('sku')}
+              className={`studio-tab flex items-center gap-1.5 ${activeModule === 'sku' ? 'studio-tab-active' : ''}`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">SKU Generator</span>
+              <span className="sm:hidden">SKU</span>
             </button>
             <button
               onClick={() => setActiveModule('optimizer')}
@@ -61,18 +89,33 @@ export default function App() {
             </button>
           </nav>
         </div>
-      </header>
+
+        <WorkflowBar
+          module={activeModule}
+          studio={studioWorkflow}
+          hasSkuHandoff={Boolean(skuHandoff)}
+          optimizerPendingCount={optimizerPendingCount}
+        />
+      </div>
 
       <div className={activeModule === 'sku' ? '' : 'hidden'}>
         <SkuApp handoff={skuHandoff} onHandoffConsumed={() => setSkuHandoff(null)} />
       </div>
       <div className={activeModule === 'studio' ? '' : 'hidden'}>
-        <ImageStudioApp onSendToSku={sendToSku} onSendToOptimizer={sendToOptimizer} />
+        <ImageStudioApp
+          onSendToSku={sendToSku}
+          onSendToOptimizer={sendToOptimizer}
+          onWorkflowChange={onStudioWorkflowChange}
+        />
       </div>
       <div className={activeModule === 'optimizer' ? '' : 'hidden'}>
         <ProductOptimizerApp
           handoff={optimizerHandoff}
-          onHandoffConsumed={() => setOptimizerHandoff(null)}
+          onHandoffConsumed={() => {
+            setOptimizerHandoff(null);
+            setOptimizerPendingCount(0);
+          }}
+          onPendingCountChange={setOptimizerPendingCount}
         />
       </div>
     </div>

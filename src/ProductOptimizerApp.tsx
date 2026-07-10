@@ -1,4 +1,4 @@
-// Changes: Product Optimizer — Shopify pull/search; accepts Image Studio handoff to replace product images.
+// Changes: Product Optimizer — workflow pending count sync; main offset for workflow bar.
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Search,
@@ -47,9 +47,11 @@ function statusBadgeClass(status: string) {
 export default function ProductOptimizerApp({
   handoff = null,
   onHandoffConsumed,
+  onPendingCountChange,
 }: {
   handoff?: OptimizerHandoff | null;
   onHandoffConsumed?: () => void;
+  onPendingCountChange?: (count: number) => void;
 }) {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -75,10 +77,15 @@ export default function ProductOptimizerApp({
     if (!handoff || handoff.id === lastHandoffId.current) return;
     lastHandoffId.current = handoff.id;
     setPendingImages(handoff.images);
+    onPendingCountChange?.(handoff.images.length);
     setSuccessMsg(`${handoff.images.length} image(s) from Image Studio — search & select a product to update.`);
     setTimeout(() => setSuccessMsg(null), 5000);
     onHandoffConsumed?.();
-  }, [handoff, onHandoffConsumed]);
+  }, [handoff, onHandoffConsumed, onPendingCountChange]);
+
+  useEffect(() => {
+    onPendingCountChange?.(pendingImages.length);
+  }, [pendingImages.length, onPendingCountChange]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -196,7 +203,7 @@ export default function ProductOptimizerApp({
 
   return (
     <div className="min-h-screen bg-zinc-50/80">
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="studio-main-offset max-w-7xl mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Product Optimizer</h1>
           <p className="text-sm text-zinc-500 mt-1">
