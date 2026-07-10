@@ -1,4 +1,4 @@
-// Changes: P0 workflow UX — Studio-first nav, workflow hint bar, chrome height CSS vars for subheaders.
+// Changes: P0 workflow UX — Studio-first nav; header stack CSS vars live on .studio-root.
 import React, { useState, useCallback } from 'react';
 import SkuApp from './SkuApp';
 import ImageStudioApp from './ImageStudioApp';
@@ -9,10 +9,6 @@ import { OptimizerHandoff } from './utils/optimizerHandoff';
 import { WorkflowBar, StudioWorkflowSnapshot } from './components/WorkflowBar';
 
 type Module = 'studio' | 'sku' | 'optimizer';
-
-const CHROME_BASE = '7.5rem';
-const CHROME_WITH_WORKFLOW = '10rem';
-const OPTIMIZER_MAIN_OFFSET = '6rem';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<Module>('studio');
@@ -40,19 +36,8 @@ export default function App() {
     setStudioWorkflow(snapshot);
   }, []);
 
-  const chromeStackH =
-    activeModule === 'optimizer' ? OPTIMIZER_MAIN_OFFSET : CHROME_WITH_WORKFLOW;
-
   return (
-    <div
-      className="studio-root min-h-screen"
-      style={
-        {
-          '--studio-subheader-top': CHROME_WITH_WORKFLOW,
-          '--chrome-stack-h': chromeStackH,
-        } as React.CSSProperties
-      }
-    >
+    <div className="studio-root min-h-screen">
       <div className="sticky top-0 z-[100] bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 shrink-0">

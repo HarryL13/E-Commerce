@@ -60,8 +60,8 @@ export const WorkflowBar: React.FC<WorkflowBarProps> = ({
   }
 
   return (
-    <div className="border-t border-indigo-100 bg-indigo-50/90 backdrop-blur-sm">
-      <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-3 text-sm">
+    <div className="border-t border-indigo-100 bg-indigo-50/90 backdrop-blur-sm h-[var(--studio-workflow-h,2.25rem)]">
+      <div className="max-w-7xl mx-auto px-4 h-full flex items-center gap-3 text-sm">
         <Icon className="w-4 h-4 text-indigo-600 shrink-0" />
         <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 shrink-0">
           Step {step}/{total}

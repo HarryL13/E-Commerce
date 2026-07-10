@@ -1,4 +1,4 @@
-/* Changes: Workflow bar chrome vars; sticky history action dock; subheader top offset. */
+/* Changes: Fix header stack heights — subheader top vs main padding were overlapping. */
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -16,20 +16,32 @@
 @layer components {
   .studio-root {
     @apply min-h-screen bg-zinc-50 text-zinc-900 font-sans;
+    --studio-nav-h: 3.5rem;
+    --studio-workflow-h: 2.25rem;
+    --studio-subheader-h: 4rem;
+    --studio-app-chrome-h: calc(var(--studio-nav-h) + var(--studio-workflow-h));
+    --studio-subheader-top: var(--studio-app-chrome-h);
+    --chrome-stack-h: calc(var(--studio-app-chrome-h) + var(--studio-subheader-h));
+    --chrome-stack-h-no-sub: var(--studio-app-chrome-h);
   }
 
   .studio-subheader {
     @apply fixed left-0 right-0 z-40 h-16 bg-white/90 backdrop-blur-xl border-b border-zinc-200 shadow-sm;
-    top: var(--studio-subheader-top, 3.5rem);
+    top: var(--studio-subheader-top);
+    height: var(--studio-subheader-h);
   }
 
   .studio-main-offset {
-    padding-top: var(--chrome-stack-h, 8rem);
+    padding-top: var(--chrome-stack-h);
+  }
+
+  .studio-main-offset-no-sub {
+    padding-top: var(--chrome-stack-h-no-sub);
   }
 
   .history-action-dock {
     @apply sticky z-30 rounded-2xl border border-indigo-200 bg-white/95 backdrop-blur-md shadow-md shadow-indigo-500/5 p-4 space-y-4;
-    top: calc(var(--studio-subheader-top, 3.5rem) + 4rem);
+    top: calc(var(--chrome-stack-h) + 0.5rem);
   }
 
   .studio-card {

@@ -1646,9 +1646,8 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   };
 
   return (
-    <div className="studio-root image-studio-root">
+    <div className="image-studio-root">
 
-      {/* Header with Tabs */}
       <Header
         currentModel={model}
         onModelChange={handleModelChange}
@@ -1661,7 +1660,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         
         {/* Progress Indicator */}
         {isGenerating && (
-           <div className="fixed top-[var(--chrome-stack-h,8rem)] left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-md border border-zinc-200 text-zinc-900 px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
+           <div className="fixed top-[calc(var(--chrome-stack-h)+0.5rem)] left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-md border border-zinc-200 text-zinc-900 px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
              <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
              <span className="text-sm font-medium">{progressMessage || "Processing..."}</span>
            </div>

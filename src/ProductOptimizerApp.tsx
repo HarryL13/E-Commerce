@@ -203,7 +203,7 @@ export default function ProductOptimizerApp({
 
   return (
     <div className="min-h-screen bg-zinc-50/80">
-      <main className="studio-main-offset max-w-7xl mx-auto px-4 py-8">
+      <main className="studio-main-offset-no-sub max-w-7xl mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Product Optimizer</h1>
           <p className="text-sm text-zinc-500 mt-1">
