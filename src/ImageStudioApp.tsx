@@ -424,7 +424,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         IMAGE_GEN_POOL_SIZE,
         async (view) => {
           try {
-            const fullPrompt = buildMultiViewPrompt(view.key);
+            const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
             const base64Image = await generateImageFromGemini(
               fullPrompt,
               ratio,
@@ -516,7 +516,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
               IMAGE_GEN_POOL_SIZE,
               async (view) => {
                 try {
-                  const fullPrompt = buildMultiViewPrompt(view.key);
+                  const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
                   const base64Image = await generateImageFromGemini(
                     fullPrompt,
                     ratio,
@@ -1197,7 +1197,9 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                 })}
               </div>
               <p className="text-xs text-zinc-500">
-                每张多视图将自动合成在 {multiViewSkuBase === 'white' ? '白' : '黑'}底 JuJuBit 模板正中央
+                {multiViewSkuBase === 'white'
+                  ? '每张多视图将合成在白底 JuJuBit 模板正中央'
+                  : '黑底模式：产品透明抠图后直接叠在黑底模板上（无白底方块）'}
               </p>
             </div>
 

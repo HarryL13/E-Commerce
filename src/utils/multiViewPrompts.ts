@@ -1,4 +1,6 @@
-// Changes: Multi-View — add front full-body angle (正面全身图) alongside top/side/zoom.
+// Changes: Multi-View prompts — black-base mode asks for isolated product on white for clean cutout.
+
+import { SkuBaseVariant } from './skuBaseTemplates';
 
 export type MultiViewAngle = 'front' | 'top' | 'side' | 'zoom';
 
@@ -18,17 +20,28 @@ const ANGLE_INSTRUCTIONS: Record<MultiViewAngle, string> = {
   zoom: `Camera angle: tight macro close-up on the most distinctive detail of the same product (texture, logo, or key feature). Shallow depth of field, product fills most of the frame.`,
 };
 
-const QUALITY_SUFFIX =
+const QUALITY_SUFFIX_WHITE =
   'Professional e-commerce product photography, soft even studio lighting, sharp focus. Pure solid white background (#FFFFFF), product perfectly centered in frame with generous even margins. No text overlays, watermarks, colored backdrop, gradients, or props unless already on the product.';
 
+const QUALITY_SUFFIX_BLACK_CUTOUT =
+  'Professional e-commerce product photography, soft even studio lighting, sharp focus. CRITICAL: render the product isolated on a pure solid white background (#FFFFFF) with clean sharp edges — no grey backdrop, no floor shadow, no gradient, no vignette. The white area must be completely uniform for background removal. Product perfectly centered with generous margins. No text overlays or watermarks.';
+
+function qualitySuffixForBase(skuBase?: SkuBaseVariant): string {
+  return skuBase === 'black' ? QUALITY_SUFFIX_BLACK_CUTOUT : QUALITY_SUFFIX_WHITE;
+}
+
 /** Build a multi-view prompt for Gemini with reference image. */
-export function buildMultiViewPrompt(angle: MultiViewAngle, userNotes?: string): string {
+export function buildMultiViewPrompt(
+  angle: MultiViewAngle,
+  userNotes?: string,
+  skuBase?: SkuBaseVariant
+): string {
   const notes = userNotes?.trim();
   let prompt = `${PRODUCT_PRESERVE}
 
 ${ANGLE_INSTRUCTIONS[angle]}
 
-${QUALITY_SUFFIX}`;
+${qualitySuffixForBase(skuBase)}`;
 
   if (notes) {
     prompt += `\n\nAdditional context: ${notes}`;
@@ -39,8 +52,9 @@ ${QUALITY_SUFFIX}`;
 /** Batch mode when no user description — minimal context from analyze step. */
 export function buildMultiViewPromptWithProduct(
   angle: MultiViewAngle,
-  productDescription: string
+  productDescription: string,
+  skuBase?: SkuBaseVariant
 ): string {
   const desc = productDescription.trim() || 'product';
-  return buildMultiViewPrompt(angle, `Product type: ${desc}`);
+  return buildMultiViewPrompt(angle, `Product type: ${desc}`, skuBase);
 }
