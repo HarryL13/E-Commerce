@@ -386,7 +386,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         productDescription = 'product';
       }
 
-      setProgressMessage('Generating Top, Side, and Zoom in parallel…');
+      setProgressMessage('Generating Front, Top, Side, and Zoom in parallel…');
 
       const genOptions = { productDescription };
 
@@ -1105,7 +1105,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
       case AppTab.MULTIVIEW:
         const multiViewImages = images.filter(i => i.tab === AppTab.MULTIVIEW);
-        const latestMultiView = multiViewImages.slice(0, 3);
+        const latestMultiView = multiViewImages.slice(0, 4);
 
         return (
           <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1190,9 +1190,10 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                             Multi-View Generator
                         </h3>
                         <p className="text-zinc-500 text-sm mb-4">
-                            Upload your product photo, then generate consistent <strong>Top, Side, and Zoom</strong> views. Uses Gemini image models and preserves the exact product from your reference.
+                            Upload your product photo, then generate consistent <strong>Front Full, Top, Side, and Zoom</strong> views. Uses Gemini image models and preserves the exact product from your reference.
                         </p>
                         <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">正面全身</span>
                             <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
                             <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
                             <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Zoom Detail</span>
@@ -1206,7 +1207,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                             className="w-full"
                         >
                             <Wand2 className="w-5 h-5 mr-2" />
-                            Generate 3 Views
+                            Generate 4 Views
                         </Button>
                     </div>
                 </div>
@@ -1270,9 +1271,10 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                                 Batch Multi-View Processor
                            </h3>
                            <p className="text-zinc-500 text-sm mb-4">
-                               This will generate <strong>3 views</strong> (Top, Side, Zoom) for <strong>every image</strong> in your queue.
+                               This will generate <strong>4 views</strong> (正面全身, Top, Side, Zoom) for <strong>every image</strong> in your queue.
                            </p>
                            <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-4">
+                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">正面全身</span>
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Zoom Detail</span>
@@ -1296,8 +1298,8 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
             {latestMultiView.length > 0 && (
               <div className="space-y-4 pt-4 border-t border-zinc-200">
                  <h4 className="text-sm font-medium text-zinc-500 uppercase tracking-wider pl-1">Latest Generation</h4>
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {latestMultiView.map((img, idx) => (
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {latestMultiView.map((img) => (
                       <div key={img.id} className="relative aspect-square bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl group">
                           <img 
                             src={img.url} 
@@ -1305,8 +1307,15 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                             className="w-full h-full object-contain"
                           />
                           <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-white/10">
-                              {/* Simple logic for labels, though batch might mix order, keeping it simple for now */}
-                             {img.prompt.includes('Zoom') ? "Zoom View" : img.prompt.includes('Side') ? "Side View" : img.prompt.includes('Top') ? "Top View" : "View"}
+                             {img.prompt.includes('Front') || img.prompt.includes('正面')
+                               ? '正面全身'
+                               : img.prompt.includes('Zoom')
+                                 ? 'Zoom View'
+                                 : img.prompt.includes('Side')
+                                   ? 'Side View'
+                                   : img.prompt.includes('Top')
+                                     ? 'Top View'
+                                     : 'View'}
                           </div>
                       </div>
                     ))}

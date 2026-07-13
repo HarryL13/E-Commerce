@@ -16,7 +16,7 @@ const POD_TITLE_EXAMPLES = `Store title examples (follow this style exactly):
 
 const TAB_LABELS: Partial<Record<AppTab, string>> = {
   [AppTab.BACKGROUND]: 'Studio background product shot',
-  [AppTab.MULTIVIEW]: 'Multi-angle product view (top / side / detail)',
+  [AppTab.MULTIVIEW]: 'Multi-angle product view (front full / top / side / detail)',
   [AppTab.SCENE]: 'Lifestyle / scene product shot',
   [AppTab.LOGO]: 'Logo-branded product shot',
 };
