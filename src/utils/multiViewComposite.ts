@@ -1,12 +1,20 @@
-// Changes: Composite Multi-View product shots onto standardized SKU base templates (centered).
-
+// Changes: SKU base compositing — optional NEW badge bottom-left with scalable size.
 import { SKU_BASE_TEMPLATES, SkuBaseVariant } from './skuBaseTemplates';
+import {
+  NEW_TAG_ASSETS,
+  NewTagOverlayOptions,
+  NewTagTextVariant,
+  newTagVariantForSkuBase,
+} from './newTagOverlay';
 
 /** Fraction of canvas used for the centered product slot (logo stays in corner). */
 const PRODUCT_SLOT_RATIO = 0.72;
 
 /** Pixels within this color distance from detected studio background become transparent. */
 const BG_COLOR_TOLERANCE = 42;
+
+/** Margin from canvas edge for NEW badge (fraction of width). */
+const NEW_TAG_MARGIN_RATIO = 0.04;
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -100,6 +108,38 @@ async function stripStudioBackground(dataUrl: string): Promise<HTMLImageElement>
   });
 }
 
+/** Strip near-black backdrop from NEW tag PNG so it overlays cleanly. */
+async function loadNewTagWithTransparency(variant: NewTagTextVariant): Promise<HTMLImageElement> {
+  const source = await loadImage(NEW_TAG_ASSETS[variant].url);
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('Canvas not supported');
+
+  ctx.drawImage(source, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    if (r < 28 && g < 28 && b < 28) {
+      data[i + 3] = 0;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load NEW tag'));
+    img.src = canvas.toDataURL('image/png');
+  });
+}
+
 function fitCenterRect(
   srcW: number,
   srcH: number,
@@ -114,18 +154,46 @@ function fitCenterRect(
   return { drawW, drawH, x, y };
 }
 
+function drawNewTagBottomLeft(
+  ctx: CanvasRenderingContext2D,
+  badge: HTMLImageElement,
+  canvasW: number,
+  canvasH: number,
+  scalePercent: number
+) {
+  const margin = Math.round(canvasW * NEW_TAG_MARGIN_RATIO);
+  const drawW = Math.round(canvasW * (scalePercent / 100));
+  const drawH = Math.round(drawW * (badge.height / badge.width));
+  const x = margin;
+  const y = canvasH - margin - drawH;
+  ctx.drawImage(badge, x, y, drawW, drawH);
+}
+
+export type MultiViewCompositeOptions = {
+  newTag?: NewTagOverlayOptions;
+};
+
 /**
  * Place a generated Multi-View image on the standardized SKU base with the product centered.
+ * Optionally overlays a NEW badge at the bottom-left.
  */
 export async function compositeMultiViewOnSkuBase(
   generatedDataUrl: string,
-  variant: SkuBaseVariant
+  variant: SkuBaseVariant,
+  options: MultiViewCompositeOptions = {}
 ): Promise<string> {
   const templateUrl = SKU_BASE_TEMPLATES[variant].url;
   const [template, product] = await Promise.all([
     loadImage(templateUrl),
     stripStudioBackground(generatedDataUrl),
   ]);
+
+  const newTagOpts = options.newTag;
+  const newTagVariant = newTagVariantForSkuBase(variant);
+  const newTagImage =
+    newTagOpts?.enabled
+      ? await loadNewTagWithTransparency(newTagVariant)
+      : null;
 
   const canvas = document.createElement('canvas');
   canvas.width = template.width;
@@ -147,6 +215,16 @@ export async function compositeMultiViewOnSkuBase(
   );
 
   ctx.drawImage(product, slotX + x, slotY + y, drawW, drawH);
+
+  if (newTagImage && newTagOpts) {
+    drawNewTagBottomLeft(
+      ctx,
+      newTagImage,
+      canvas.width,
+      canvas.height,
+      newTagOpts.scalePercent
+    );
+  }
 
   return canvas.toDataURL('image/png');
 }

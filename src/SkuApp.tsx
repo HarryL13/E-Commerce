@@ -1,5 +1,13 @@
-// Changes: POD/大货 pricing; pipeline mode banner when imported from Image Studio.
+// Changes: POD carousel auto-appends size guide + create-your-own as last 2 gallery images.
 import { WorkflowUxMode } from './utils/workflowGuide';
+import {
+  buildPodCarouselPreviews,
+  MAX_POD_USER_CAROUSEL_IMAGES,
+  POD_CAROUSEL_TAIL_ASSETS,
+  preloadPodCarouselTailAssets,
+  isPodCarouselTailImage,
+  shouldAppendPodCarouselTail,
+} from './utils/podCarouselAssets';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Download, Wand2, AlertCircle, Save, History, CheckCircle2, PackageSearch, Trash2, RefreshCw, Plus, Store, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -63,6 +71,9 @@ export default function SkuApp({
   workflowUxMode = 'standalone',
   onHandoffConsumed,
 }: SkuAppProps) {
+  useEffect(() => {
+    preloadPodCarouselTailAssets();
+  }, []);
   const [view, setView] = useState<'generator' | 'history'>('generator');
   const [history, setHistory] = useState<StoredProduct[]>(() => getStoredProducts());
 
@@ -222,11 +233,18 @@ export default function SkuApp({
     setTimeout(() => setSuccessMsg(null), 3000);
   };
 
+  const maxUploadImages =
+    priceMode === 'pod-default' && generationMode === 'single-product'
+      ? MAX_POD_USER_CAROUSEL_IMAGES
+      : MAX_PRODUCT_IMAGES;
+
   const handleImagesSelected = async (newFiles: File[]) => {
     let updatedFiles = [...imageFiles, ...newFiles];
-    if (updatedFiles.length > MAX_PRODUCT_IMAGES) {
-      setError(`You can only use up to ${MAX_PRODUCT_IMAGES} images per product. Limiting to first ${MAX_PRODUCT_IMAGES}.`);
-      updatedFiles = updatedFiles.slice(0, MAX_PRODUCT_IMAGES);
+    if (updatedFiles.length > maxUploadImages) {
+      setError(
+        `You can only use up to ${maxUploadImages} product images${priceMode === 'pod-default' && generationMode === 'single-product' ? ' (+ 2 fixed carousel slides)' : ''}. Limiting to first ${maxUploadImages}.`
+      );
+      updatedFiles = updatedFiles.slice(0, maxUploadImages);
     } else {
       setError(null);
     }
@@ -353,7 +371,8 @@ export default function SkuApp({
         setBulkProgress(null);
         setView('history');
       } else {
-        const { mainImageSrc, galleryImageSrcs } = splitProductImages(previews);
+        const carouselPreviews = await buildPodCarouselPreviews(previews, mode, genMode);
+        const { mainImageSrc, galleryImageSrcs } = splitProductImages(carouselPreviews);
         const fileToProcess = mainImageSrc || null;
         const result = await generateProductDetails(
           fileToProcess,
@@ -397,7 +416,9 @@ export default function SkuApp({
         }
 
         if (galleryImageSrcs.length > 0) {
-          setSuccessMsg(`Listing ready with ${1 + galleryImageSrcs.length} product images.`);
+          const tailNote =
+            shouldAppendPodCarouselTail(mode, genMode) ? '（含尺寸说明 + 定制步骤）' : '';
+          setSuccessMsg(`Listing ready with ${1 + galleryImageSrcs.length} product images${tailNote}.`);
           setTimeout(() => setSuccessMsg(null), 4000);
         }
       }
@@ -422,6 +443,9 @@ export default function SkuApp({
   };
 
   const removeGalleryImage = (index: number) => {
+    const src = productData.galleryImageSrcs?.[index];
+    if (src && isPodCarouselTailImage(src)) return;
+
     setProductData((prev) => ({
       ...prev,
       galleryImageSrcs: (prev.galleryImageSrcs ?? []).filter((_, i) => i !== index),
@@ -440,7 +464,14 @@ export default function SkuApp({
     pendingSourceImageIds.current = handoff.sourceImageIds;
     setView('generator');
     setImageFiles([]);
-    setImagePreviews(handoff.images.slice(0, MAX_PRODUCT_IMAGES));
+    setImagePreviews(
+      handoff.images.slice(
+        0,
+        handoff.priceMode === 'pod-default' && handoff.mode === 'single-product'
+          ? MAX_POD_USER_CAROUSEL_IMAGES
+          : MAX_PRODUCT_IMAGES
+      )
+    );
     setGenerationMode(handoff.mode);
     setPriceMode(handoff.priceMode);
     setContextText(handoff.contextText);
@@ -752,6 +783,26 @@ export default function SkuApp({
                             </tbody>
                           </table>
                         </div>
+                        {generationMode === 'single-product' ? (
+                          <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
+                            <p className="text-xs font-medium text-indigo-900">轮播图固定末尾（自动生成）</p>
+                            <div className="flex flex-wrap gap-3">
+                              {POD_CAROUSEL_TAIL_ASSETS.map((asset) => (
+                                <div key={asset.id} className="flex items-center gap-2">
+                                  <img
+                                    src={asset.url}
+                                    alt={asset.label}
+                                    className="w-14 h-14 rounded-lg object-cover border border-indigo-200 bg-black"
+                                  />
+                                  <span className="text-[10px] text-indigo-700 font-medium">{asset.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-indigo-600/80 leading-relaxed">
+                              生成 SKU 时自动追加为轮播最后 2 张 · 产品图最多 {MAX_POD_USER_CAROUSEL_IMAGES} 张
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -984,9 +1035,13 @@ export default function SkuApp({
                               className="w-20 h-20 object-cover rounded-xl border border-zinc-200 shadow-sm"
                             />
                             <span className="absolute top-1 left-1 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-black/60 text-white">
-                              {index === 0 ? 'Hero' : index + 1}
+                              {index === 0
+                                ? 'Hero'
+                                : isPodCarouselTailImage(src)
+                                  ? '固定'
+                                  : index + 1}
                             </span>
-                            {index > 0 && (
+                            {index > 0 && !isPodCarouselTailImage(src) && (
                               <button
                                 type="button"
                                 onClick={() => removeGalleryImage(index - 1)}

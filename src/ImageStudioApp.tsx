@@ -46,6 +46,17 @@ import {
 } from './utils/skuBaseTemplates';
 import { compositeMultiViewOnSkuBase } from './utils/multiViewComposite';
 import {
+  NEW_TAG_ASSETS,
+  NEW_TAG_SCALE_DEFAULT,
+  NEW_TAG_SCALE_MAX,
+  NEW_TAG_SCALE_MIN,
+  newTagVariantForSkuBase,
+  readNewTagEnabled,
+  readNewTagScale,
+  writeNewTagEnabled,
+  writeNewTagScale,
+} from './utils/newTagOverlay';
+import {
   getStoredImages,
   setStoredImages,
   removeStoredImage,
@@ -106,6 +117,8 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   // MultiView Modes
   const [multiViewMode, setMultiViewMode] = useState<'single' | 'batch'>('single');
   const [multiViewSkuBase, setMultiViewSkuBase] = useState<SkuBaseVariant>(() => readSkuBasePreference());
+  const [multiViewNewTagEnabled, setMultiViewNewTagEnabled] = useState(() => readNewTagEnabled());
+  const [multiViewNewTagScale, setMultiViewNewTagScale] = useState(() => readNewTagScale());
 
   // Separate upload state for each tab
   const [bgImage, setBgImage] = useState<string | null>(null);
@@ -162,9 +175,25 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     writeSkuBasePreference(variant);
   };
 
+  const toggleMultiViewNewTag = (enabled: boolean) => {
+    setMultiViewNewTagEnabled(enabled);
+    writeNewTagEnabled(enabled);
+  };
+
+  const setMultiViewNewTagScalePref = (scale: number) => {
+    const clamped = Math.min(NEW_TAG_SCALE_MAX, Math.max(NEW_TAG_SCALE_MIN, Math.round(scale)));
+    setMultiViewNewTagScale(clamped);
+    writeNewTagScale(clamped);
+  };
+
   const applyMultiViewSkuBase = async (rawUrl: string): Promise<string> => {
     try {
-      return await compositeMultiViewOnSkuBase(rawUrl, multiViewSkuBase);
+      return await compositeMultiViewOnSkuBase(rawUrl, multiViewSkuBase, {
+        newTag: {
+          enabled: multiViewNewTagEnabled,
+          scalePercent: multiViewNewTagScale,
+        },
+      });
     } catch (err) {
       console.warn('SKU base composite failed, using raw image', err);
       return rawUrl;
@@ -1170,6 +1199,67 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
               <p className="text-xs text-zinc-500">
                 每张多视图将自动合成在 {multiViewSkuBase === 'white' ? '白' : '黑'}底 JuJuBit 模板正中央
               </p>
+            </div>
+
+            {/* NEW badge overlay */}
+            <div className="flex flex-col items-center gap-3 max-w-md mx-auto w-full">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                NEW 标签
+              </span>
+              <div className="w-full rounded-xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={NEW_TAG_ASSETS[newTagVariantForSkuBase(multiViewSkuBase)].url}
+                      alt="NEW preview"
+                      className="w-14 h-auto shrink-0 rounded-md bg-zinc-900 object-contain p-0.5"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-zinc-900">添加 NEW 标签</p>
+                      <p className="text-[11px] text-zinc-500 truncate">
+                        左下角 · 自动匹配{multiViewSkuBase === 'white' ? '黑' : '白'}字
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={multiViewNewTagEnabled}
+                    onClick={() => toggleMultiViewNewTag(!multiViewNewTagEnabled)}
+                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                      multiViewNewTagEnabled ? 'bg-indigo-600' : 'bg-zinc-200'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                        multiViewNewTagEnabled ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {multiViewNewTagEnabled ? (
+                  <div className="space-y-2 pt-1 border-t border-zinc-100">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-500">标签大小</span>
+                      <span className="font-medium text-indigo-700 tabular-nums">{multiViewNewTagScale}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={NEW_TAG_SCALE_MIN}
+                      max={NEW_TAG_SCALE_MAX}
+                      step={1}
+                      value={multiViewNewTagScale}
+                      onChange={(e) => setMultiViewNewTagScalePref(Number(e.target.value))}
+                      className="w-full h-2 accent-indigo-600 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-zinc-400">
+                      <span>小</span>
+                      <span>大</span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             {multiViewMode === 'single' ? (
