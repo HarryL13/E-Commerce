@@ -8,7 +8,7 @@
 //   optional prompt, AI compositing via Gemini multi-image reference.
 // - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
 // - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
-// Changes: P0 workflow UX — report selection state; sticky history action dock; equal SKU/Optimizer CTAs.
+// Changes: UX modes — pipeline dock (继续生成 SKU) vs standalone Shared History.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -39,12 +39,20 @@ import { prepareReferenceForApi } from './utils/imageApiPrep';
 import { runPool, IMAGE_GEN_POOL_SIZE } from './utils/runPool';
 import { StudioWorkflowSnapshot } from './components/WorkflowBar';
 import {
+  SKU_BASE_TEMPLATES,
+  SkuBaseVariant,
+  readSkuBasePreference,
+  writeSkuBasePreference,
+} from './utils/skuBaseTemplates';
+import { compositeMultiViewOnSkuBase } from './utils/multiViewComposite';
+import {
   getStoredImages,
   setStoredImages,
   removeStoredImage,
   clearStoredImages,
   SkuLine,
 } from './utils/unifiedHistory';
+import { WorkflowUxMode } from './utils/workflowGuide';
 
 const SKU_LINE_PREF_KEY = 'ecs_sku_line_pref';
 
@@ -59,15 +67,19 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 };
 
 interface ImageStudioAppProps {
+  workflowUxMode?: WorkflowUxMode;
   onSendToSku?: (handoff: SkuHandoff) => void;
   onSendToOptimizer?: (handoff: import('./utils/optimizerHandoff').OptimizerHandoff) => void;
   onWorkflowChange?: (snapshot: StudioWorkflowSnapshot) => void;
+  onGoToOptimizer?: () => void;
 }
 
 const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
+  workflowUxMode = 'standalone',
   onSendToSku,
   onSendToOptimizer,
   onWorkflowChange,
+  onGoToOptimizer,
 }) => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
   const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
@@ -93,6 +105,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   const [sceneMode, setSceneMode] = useState<'single' | 'batch'>('single');
   // MultiView Modes
   const [multiViewMode, setMultiViewMode] = useState<'single' | 'batch'>('single');
+  const [multiViewSkuBase, setMultiViewSkuBase] = useState<SkuBaseVariant>(() => readSkuBasePreference());
 
   // Separate upload state for each tab
   const [bgImage, setBgImage] = useState<string | null>(null);
@@ -142,6 +155,20 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
   const handleModelChange = (nextModel: ModelType) => {
     setModel(nextModel);
+  };
+
+  const selectMultiViewSkuBase = (variant: SkuBaseVariant) => {
+    setMultiViewSkuBase(variant);
+    writeSkuBasePreference(variant);
+  };
+
+  const applyMultiViewSkuBase = async (rawUrl: string): Promise<string> => {
+    try {
+      return await compositeMultiViewOnSkuBase(rawUrl, multiViewSkuBase);
+    } catch (err) {
+      console.warn('SKU base composite failed, using raw image', err);
+      return rawUrl;
+    }
   };
 
   const handleGenerate = useCallback(async (
@@ -378,9 +405,11 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
               genOptions
             );
 
+            const finalUrl = await applyMultiViewSkuBase(base64Image);
+
             const newImage: GeneratedImage = {
               id: crypto.randomUUID(),
-              url: base64Image,
+              url: finalUrl,
               prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
               timestamp: Date.now(),
               aspectRatio: ratio,
@@ -467,9 +496,10 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                     undefined,
                     genOptions
                   );
+                  const finalUrl = await applyMultiViewSkuBase(base64Image);
                   const newImage: GeneratedImage = {
                     id: crypto.randomUUID(),
-                    url: base64Image,
+                    url: finalUrl,
                     prompt: `Batch (${file.name}): ${view.label}`,
                     timestamp: Date.now(),
                     aspectRatio: ratio,
@@ -1105,6 +1135,43 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                 </div>
             </div>
 
+            {/* SKU base template — white / black */}
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                SKU 底图
+              </span>
+              <div className="bg-white p-1 rounded-xl border border-zinc-200 flex gap-1 shadow-sm">
+                {(['white', 'black'] as const).map((variant) => {
+                  const tpl = SKU_BASE_TEMPLATES[variant];
+                  const active = multiViewSkuBase === variant;
+                  return (
+                    <button
+                      key={variant}
+                      type="button"
+                      onClick={() => selectMultiViewSkuBase(variant)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        active
+                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                          : 'text-zinc-600 hover:bg-zinc-50'
+                      }`}
+                    >
+                      <img
+                        src={tpl.url}
+                        alt={tpl.labelZh}
+                        className={`w-9 h-9 rounded-md object-cover border ${
+                          active ? 'border-white/40' : 'border-zinc-200'
+                        }`}
+                      />
+                      {tpl.labelZh}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-zinc-500">
+                每张多视图将自动合成在 {multiViewSkuBase === 'white' ? '白' : '黑'}底 JuJuBit 模板正中央
+              </p>
+            </div>
+
             {multiViewMode === 'single' ? (
                 // SINGLE MODE UI
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1693,10 +1760,16 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
             <div>
               <h2 className="text-xl font-semibold text-zinc-900">Shared History</h2>
-              <p className="text-sm text-zinc-500 mt-1 max-w-xl">
-                Select images in order (1st = hero). Then push to <strong>SKU</strong> for new listings or{' '}
-                <strong>Optimizer</strong> to replace images on live products.
-              </p>
+              {workflowUxMode === 'pipeline' ? (
+                <p className="text-sm text-zinc-500 mt-1 max-w-2xl">
+                  完整流程图片库。按顺序勾选（第 1 张 = 主图），然后
+                  <strong className="text-indigo-700"> 继续生成 SKU</strong> 进入下一步。
+                </p>
+              ) : (
+                <p className="text-sm text-zinc-500 mt-1 max-w-2xl">
+                  独立使用 — 所有 tab 生成的图片集中在此。可选勾选后推送到 SKU Generator。
+                </p>
+              )}
             </div>
             {images.length > 0 && (
               <Button
@@ -1716,102 +1789,192 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           </div>
 
           {(onSendToSku || onSendToOptimizer) && (
-            <div className="history-action-dock mb-6">
-              {onSendToSku && (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">SKU line</p>
-                    <div className="studio-tab-group p-1 inline-flex">
-                      <button
-                        type="button"
-                        onClick={() => setSkuLineSelection('pod')}
-                        className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'pod' ? 'studio-tab-active' : ''}`}
-                      >
-                        <Package className="w-3.5 h-3.5" />
-                        POD · FIG-POD-size
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSkuLineSelection('bulk')}
-                        className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'bulk' ? 'studio-tab-active' : ''}`}
-                      >
-                        <Boxes className="w-3.5 h-3.5" />
-                        大货 · xxx-REG-size
-                      </button>
-                    </div>
+            <div
+              className={`history-action-dock mb-6 ${
+                workflowUxMode === 'pipeline' ? 'history-action-dock-pipeline' : ''
+              }`}
+            >
+              {workflowUxMode === 'pipeline' ? (
+                <>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 px-2 py-0.5 rounded-full bg-indigo-100 border border-indigo-200">
+                      完整流程 · Step 2
+                    </span>
                   </div>
 
-                  {selectedOrderedImages.length > 1 && (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Listing mode</p>
-                      <div className="studio-tab-group p-1 inline-flex">
-                        <button
-                          type="button"
-                          onClick={() => setGalleryMode('single-product')}
-                          className={`studio-tab text-xs ${galleryMode === 'single-product' ? 'studio-tab-active' : ''}`}
-                        >
-                          1 SKU · {selectedOrderedImages.length} imgs
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setGalleryMode('bulk-products')}
-                          className={`studio-tab text-xs ${galleryMode === 'bulk-products' ? 'studio-tab-active' : ''}`}
-                        >
-                          {selectedOrderedImages.length}× separate SKUs
-                        </button>
+                  {onSendToSku && (
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+                          SKU 产品线
+                        </p>
+                        <div className="studio-tab-group p-1 inline-flex">
+                          <button
+                            type="button"
+                            onClick={() => setSkuLineSelection('pod')}
+                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'pod' ? 'studio-tab-active' : ''}`}
+                          >
+                            <Package className="w-3.5 h-3.5" />
+                            POD
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSkuLineSelection('bulk')}
+                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'bulk' ? 'studio-tab-active' : ''}`}
+                          >
+                            <Boxes className="w-3.5 h-3.5" />
+                            大货
+                          </button>
+                        </div>
                       </div>
+
+                      {selectedOrderedImages.length > 1 && (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+                            Listing 模式
+                          </p>
+                          <div className="studio-tab-group p-1 inline-flex">
+                            <button
+                              type="button"
+                              onClick={() => setGalleryMode('single-product')}
+                              className={`studio-tab text-xs ${galleryMode === 'single-product' ? 'studio-tab-active' : ''}`}
+                            >
+                              1 SKU · {selectedOrderedImages.length} 图
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGalleryMode('bulk-products')}
+                              className={`studio-tab text-xs ${galleryMode === 'bulk-products' ? 'studio-tab-active' : ''}`}
+                            >
+                              {selectedOrderedImages.length}× 独立 SKU
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
-              )}
 
-              {selectedOrderedImages.length > 0 ? (
-                <div className="space-y-3">
-                  <p className="text-xs text-zinc-600">
-                    <span className="font-medium text-indigo-700">{selectedOrderedImages.length} selected</span>
-                    {' · '}
-                    #{1} hero
-                    {selectedOrderedImages.length > 1 && ` · #2–${selectedOrderedImages.length} gallery`}
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {onSendToSku && (
-                      <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">
-                          New product
+                  {selectedOrderedImages.length > 0 && onSendToSku ? (
+                    <div className="space-y-3">
+                      <p className="text-xs text-zinc-600">
+                        已选 <span className="font-medium text-indigo-700">{selectedOrderedImages.length}</span>{' '}
+                        张 · #{1} 主图
+                        {selectedOrderedImages.length > 1 &&
+                          ` · #2–${selectedOrderedImages.length} 轮播`}
+                      </p>
+                      <Button
+                        size="lg"
+                        className="w-full sm:w-auto"
+                        onClick={() => handleSendToSku(selectedOrderedImages, galleryMode)}
+                      >
+                        <Package className="w-4 h-4 mr-2" />
+                        继续生成 SKU
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">
+                      在下方网格按顺序点击勾选图片 — 选好后点击「继续生成 SKU」
+                    </p>
+                  )}
+
+                  {onGoToOptimizer ? (
+                    <button
+                      type="button"
+                      onClick={onGoToOptimizer}
+                      className="text-[11px] text-zinc-400 hover:text-violet-600 transition-colors"
+                    >
+                      要更新已有 Shopify 产品？前往 Optimizer →
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {onSendToSku && selectedOrderedImages.length > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+                          SKU line
                         </p>
+                        <div className="studio-tab-group p-1 inline-flex">
+                          <button
+                            type="button"
+                            onClick={() => setSkuLineSelection('pod')}
+                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'pod' ? 'studio-tab-active' : ''}`}
+                          >
+                            <Package className="w-3.5 h-3.5" />
+                            POD
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSkuLineSelection('bulk')}
+                            className={`studio-tab flex items-center gap-1.5 text-xs ${skuLineSelection === 'bulk' ? 'studio-tab-active' : ''}`}
+                          >
+                            <Boxes className="w-3.5 h-3.5" />
+                            大货
+                          </button>
+                        </div>
+                      </div>
+
+                      {selectedOrderedImages.length > 1 && (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+                            Listing mode
+                          </p>
+                          <div className="studio-tab-group p-1 inline-flex">
+                            <button
+                              type="button"
+                              onClick={() => setGalleryMode('single-product')}
+                              className={`studio-tab text-xs ${galleryMode === 'single-product' ? 'studio-tab-active' : ''}`}
+                            >
+                              1 SKU
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGalleryMode('bulk-products')}
+                              className={`studio-tab text-xs ${galleryMode === 'bulk-products' ? 'studio-tab-active' : ''}`}
+                            >
+                              {selectedOrderedImages.length}× SKU
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedOrderedImages.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-xs text-zinc-600 mr-auto">
+                        已选 {selectedOrderedImages.length} 张（可选操作）
+                      </p>
+                      {onSendToSku && (
                         <Button
                           size="sm"
-                          className="w-full"
+                          variant="secondary"
                           onClick={() => handleSendToSku(selectedOrderedImages, galleryMode)}
                         >
                           <Package className="w-3.5 h-3.5 mr-1.5" />
-                          Generate {skuLineSelection === 'pod' ? 'POD' : '大货'} SKU
-                          <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                          推送到 SKU Generator
                         </Button>
-                      </div>
-                    )}
-                    {onSendToOptimizer && (
-                      <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 space-y-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-700">
-                          Existing Shopify product
-                        </p>
+                      )}
+                      {onSendToOptimizer && (
                         <Button
                           size="sm"
-                          className="w-full bg-violet-600 hover:bg-violet-700 text-white"
+                          variant="ghost"
+                          className="text-violet-700 hover:bg-violet-50"
                           onClick={() => handleSendToOptimizer(selectedOrderedImages)}
                         >
                           <Sparkles className="w-3.5 h-3.5 mr-1.5" />
                           Push to Optimizer
-                          <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                         </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-500">
-                  Select images in the grid below — click order = carousel sequence (1st = main image).
-                </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">
+                      勾选图片后可推送到 SKU Generator 或 Optimizer（非必须）
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

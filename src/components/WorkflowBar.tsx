@@ -1,6 +1,8 @@
-// Changes: Global workflow step hint — guides Image Studio → SKU / Optimizer pipeline.
+// Changes: Mode-aware workflow bar — standalone hints or pipeline stepper.
 import React from 'react';
 import { ArrowRight, Image, Package, Search } from 'lucide-react';
+import { resolveWorkflowHint, WorkflowBarState, WorkflowModule } from '../utils/workflowGuide';
+import { PipelineStepper } from './PipelineStepper';
 
 export type StudioWorkflowSnapshot = {
   selectedCount: number;
@@ -8,66 +10,68 @@ export type StudioWorkflowSnapshot = {
   skuLine: 'pod' | 'bulk';
 };
 
-export type WorkflowModule = 'studio' | 'sku' | 'optimizer';
+export type { WorkflowModule };
 
-type WorkflowBarProps = {
-  module: WorkflowModule;
-  studio?: StudioWorkflowSnapshot;
-  hasSkuHandoff?: boolean;
-  optimizerPendingCount?: number;
-};
+type WorkflowBarProps = WorkflowBarState;
 
-export const WorkflowBar: React.FC<WorkflowBarProps> = ({
-  module,
-  studio,
-  hasSkuHandoff,
-  optimizerPendingCount = 0,
-}) => {
-  let step = 1;
-  let total = 4;
-  let message = '';
-  let Icon = Image;
+const MODULE_ICONS = {
+  studio: Image,
+  sku: Package,
+  optimizer: Search,
+} as const;
 
-  if (module === 'studio') {
-    Icon = Image;
-    const selected = studio?.selectedCount ?? 0;
-    const totalImages = studio?.totalImages ?? 0;
-    const line = studio?.skuLine === 'bulk' ? '大货' : 'POD';
-
-    if (totalImages === 0) {
-      step = 1;
-      message = 'Generate product images above (Multi-View, Background, Scene…)';
-    } else if (selected === 0) {
-      step = 2;
-      message = `${totalImages} image(s) ready — select below (click order = carousel, 1st = hero)`;
-    } else {
-      step = 3;
-      message = `${selected} selected · ${line} · Next: Generate SKU (new product) or Push to Optimizer (replace live images)`;
-    }
-  } else if (module === 'sku') {
-    Icon = Package;
-    step = hasSkuHandoff ? 3 : 2;
-    message = hasSkuHandoff
-      ? 'Review AI listing, variants & inventory → Publish Draft to Shopify'
-      : 'Upload images or import from Image Studio Shared History';
-  } else {
-    Icon = Search;
-    step = optimizerPendingCount > 0 ? 3 : 2;
-    message =
-      optimizerPendingCount > 0
-        ? `${optimizerPendingCount} studio image(s) pending — search product → Save + Replace Images`
-        : 'Search live Shopify products to edit listing or replace gallery';
-  }
+export const WorkflowBar: React.FC<WorkflowBarProps> = (props) => {
+  const hint = resolveWorkflowHint(props);
+  const Icon = MODULE_ICONS[props.module];
+  const isPipeline = props.uxMode === 'pipeline';
 
   return (
-    <div className="border-t border-indigo-100 bg-indigo-50/90 backdrop-blur-sm h-[var(--studio-workflow-h,2.25rem)]">
-      <div className="max-w-7xl mx-auto px-4 h-full flex items-center gap-3 text-sm">
-        <Icon className="w-4 h-4 text-indigo-600 shrink-0" />
-        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 shrink-0">
-          Step {step}/{total}
-        </span>
-        <span className="text-indigo-900/90 truncate flex-1">{message}</span>
-        <ArrowRight className="w-4 h-4 text-indigo-400 shrink-0 hidden sm:block" />
+    <div
+      className={`border-t backdrop-blur-sm ${
+        isPipeline
+          ? 'border-indigo-200 bg-gradient-to-r from-indigo-50/95 to-violet-50/80'
+          : 'border-zinc-200 bg-zinc-50/90'
+      } min-h-[var(--studio-workflow-h,2.25rem)]`}
+    >
+      <div className="max-w-7xl mx-auto px-4 py-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3 text-sm min-h-[var(--studio-workflow-h,2.25rem)]">
+        {isPipeline ? (
+          <PipelineStepper state={props} />
+        ) : (
+          <Icon className="w-4 h-4 text-zinc-500 shrink-0" />
+        )}
+
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          {isPipeline ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 shrink-0 hidden lg:inline">
+              Step {hint.step}/{hint.total}
+            </span>
+          ) : null}
+
+          <div className="flex-1 min-w-0">
+            <p
+              className={`truncate leading-snug ${
+                isPipeline ? 'text-indigo-900/90' : 'text-zinc-700'
+              }`}
+            >
+              {hint.message}
+            </p>
+            {hint.subMessage ? (
+              <p
+                className={`text-[11px] truncate leading-snug hidden sm:block ${
+                  isPipeline ? 'text-indigo-600/70' : 'text-zinc-500'
+                }`}
+              >
+                {hint.subMessage}
+              </p>
+            ) : null}
+          </div>
+
+          <ArrowRight
+            className={`w-4 h-4 shrink-0 hidden md:block ${
+              isPipeline ? 'text-indigo-400' : 'text-zinc-300'
+            }`}
+          />
+        </div>
       </div>
     </div>
   );

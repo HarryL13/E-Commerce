@@ -1,4 +1,4 @@
-/* Changes: Fix header stack heights — subheader top vs main padding were overlapping. */
+/* Changes: Workflow mode switch + pipeline stepper styles. */
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -42,6 +42,78 @@
   .history-action-dock {
     @apply sticky z-30 rounded-2xl border border-indigo-200 bg-white/95 backdrop-blur-md shadow-md shadow-indigo-500/5 p-4 space-y-4;
     top: calc(var(--chrome-stack-h) + 0.5rem);
+  }
+
+  .history-action-dock-pipeline {
+    @apply border-indigo-300 bg-gradient-to-br from-indigo-50/80 to-white shadow-indigo-500/10;
+  }
+
+  .workflow-mode-switch {
+    @apply flex items-center p-0.5 bg-zinc-100 rounded-lg border border-zinc-200/80 shrink-0;
+  }
+
+  .workflow-mode-btn {
+    @apply flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition-all text-zinc-500 hover:text-zinc-800;
+  }
+
+  .workflow-mode-btn-active {
+    @apply bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200;
+  }
+
+  .workflow-mode-btn-active-pipeline {
+    @apply bg-indigo-600 text-white shadow-sm hover:text-white;
+  }
+
+  .studio-root-pipeline {
+    --studio-workflow-h: 3.25rem;
+  }
+
+  .pipeline-stepper {
+    @apply flex items-center gap-0.5 sm:gap-1 shrink-0 overflow-x-auto max-w-full pb-0.5;
+  }
+
+  .pipeline-step {
+    @apply flex items-center gap-1 shrink-0;
+  }
+
+  .pipeline-step-dot {
+    @apply w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border;
+  }
+
+  .pipeline-step-label {
+    @apply text-[10px] font-medium hidden sm:inline whitespace-nowrap;
+  }
+
+  .pipeline-step-done .pipeline-step-dot {
+    @apply bg-indigo-600 border-indigo-600 text-white;
+  }
+
+  .pipeline-step-done .pipeline-step-label {
+    @apply text-indigo-700;
+  }
+
+  .pipeline-step-active .pipeline-step-dot {
+    @apply bg-white border-indigo-600 text-indigo-700 ring-2 ring-indigo-200;
+  }
+
+  .pipeline-step-active .pipeline-step-label {
+    @apply text-indigo-900 font-semibold;
+  }
+
+  .pipeline-step-pending .pipeline-step-dot {
+    @apply bg-zinc-100 border-zinc-200 text-zinc-400;
+  }
+
+  .pipeline-step-pending .pipeline-step-label {
+    @apply text-zinc-400;
+  }
+
+  .pipeline-connector {
+    @apply w-3 sm:w-5 h-px bg-zinc-200 shrink-0;
+  }
+
+  .pipeline-connector-done {
+    @apply bg-indigo-400;
   }
 
   .studio-card {
@@ -122,4 +194,84 @@
 .studio-root ::-webkit-scrollbar-thumb:hover,
 .image-studio-root ::-webkit-scrollbar-thumb:hover {
   background: #a1a1aa;
+}
+
+.help-backdrop {
+  @apply fixed inset-0 z-[180] bg-zinc-900/20 backdrop-blur-[1px];
+}
+
+.help-panel {
+  @apply fixed top-4 right-4 bottom-4 z-[190] w-[min(100vw-2rem,24rem)] flex flex-col rounded-2xl border border-zinc-200 bg-white/95 shadow-2xl shadow-indigo-500/10 backdrop-blur-xl overflow-hidden;
+}
+
+.help-panel-header {
+  @apply flex items-center justify-between gap-3 px-4 py-3 border-b border-zinc-100 bg-white/80 shrink-0;
+}
+
+.help-panel-body {
+  @apply flex-1 overflow-y-auto px-4 py-4 space-y-4;
+}
+
+.help-icon-btn {
+  @apply p-2 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors;
+}
+
+.help-overview {
+  @apply rounded-xl border border-indigo-100 bg-indigo-50/60 p-3;
+}
+
+.help-chip {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-indigo-100 text-[10px] font-medium text-indigo-800;
+}
+
+.help-section {
+  @apply rounded-xl border border-zinc-100 bg-zinc-50/50 p-3;
+}
+
+.help-section-title {
+  @apply flex items-center gap-2 text-xs font-semibold text-zinc-800 mb-2;
+}
+
+.help-steps {
+  @apply space-y-2;
+}
+
+.help-steps li {
+  @apply flex gap-2 text-[11px] leading-relaxed text-zinc-600;
+}
+
+.help-step-num {
+  @apply shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center;
+}
+
+.help-bullets {
+  @apply space-y-1.5;
+}
+
+.help-bullets li {
+  @apply flex gap-1.5 text-[11px] leading-relaxed text-zinc-600;
+}
+
+.help-floating-tab {
+  @apply fixed z-[200] bottom-6 right-6 flex items-center gap-0 rounded-xl shadow-lg shadow-indigo-500/20 overflow-hidden;
+}
+
+.help-floating-tab-open {
+  @apply opacity-0 pointer-events-none;
+}
+
+.help-tab-trigger {
+  @apply flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors;
+}
+
+.help-tab-label {
+  @apply whitespace-nowrap;
+}
+
+.help-tab-dismiss {
+  @apply flex items-center justify-center w-9 self-stretch border-l border-indigo-500/40 bg-indigo-700/90 text-white/80 hover:text-white hover:bg-indigo-800 transition-colors;
+}
+
+.help-restore-btn {
+  @apply fixed z-[200] bottom-6 right-6 w-11 h-11 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 flex items-center justify-center hover:bg-indigo-700 transition-colors;
 }

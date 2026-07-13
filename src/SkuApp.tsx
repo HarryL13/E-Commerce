@@ -1,7 +1,5 @@
-// Changes:
-// - POD (FIG-POD-size) vs 大货 (xxx-REG-size) pricing; shared unified history with Image Studio.
-// - Image filenames linked to product handle; handoff preserves carousel order + sourceImageIds.
-// - Publish to Shopify: uploads gallery images and creates product via Admin API.
+// Changes: POD/大货 pricing; pipeline mode banner when imported from Image Studio.
+import { WorkflowUxMode } from './utils/workflowGuide';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Download, Wand2, AlertCircle, Save, History, CheckCircle2, PackageSearch, Trash2, RefreshCw, Plus, Store, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -56,10 +54,15 @@ type GenerateOptions = {
 
 interface SkuAppProps {
   handoff?: SkuHandoff | null;
+  workflowUxMode?: WorkflowUxMode;
   onHandoffConsumed?: () => void;
 }
 
-export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProps) {
+export default function SkuApp({
+  handoff = null,
+  workflowUxMode = 'standalone',
+  onHandoffConsumed,
+}: SkuAppProps) {
   const [view, setView] = useState<'generator' | 'history'>('generator');
   const [history, setHistory] = useState<StoredProduct[]>(() => getStoredProducts());
 
@@ -594,6 +597,17 @@ export default function SkuApp({ handoff = null, onHandoffConsumed }: SkuAppProp
       </div>
 
       <main className="studio-main-offset max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+        {workflowUxMode === 'pipeline' && handoff && (
+          <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 flex items-start gap-3">
+            <CheckCircle2 className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-indigo-900">完整流程 Step 3–4</p>
+              <p className="text-xs text-indigo-700/80 mt-0.5">
+                已从 Image Studio 导入 {handoff.images.length} 张图。检查 AI 生成的 listing → Publish Draft 完成上架。
+              </p>
+            </div>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           {error && (
             <motion.div

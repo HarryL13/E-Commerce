@@ -1,4 +1,4 @@
-// Changes: Multi-View prompts for Gemini image models — preserve product, change camera angle only.
+// Changes: Multi-View prompts — preserve product; pure white backdrop for SKU base compositing.
 
 export type MultiViewAngle = 'top' | 'side' | 'zoom';
 
@@ -17,7 +17,7 @@ const ANGLE_INSTRUCTIONS: Record<MultiViewAngle, string> = {
 };
 
 const QUALITY_SUFFIX =
-  'Professional e-commerce product photography, soft even studio lighting, sharp focus, seamless light grey or white background. No text overlays, watermarks, or props unless already on the product.';
+  'Professional e-commerce product photography, soft even studio lighting, sharp focus. Pure solid white background (#FFFFFF), product perfectly centered in frame with generous even margins. No text overlays, watermarks, colored backdrop, gradients, or props unless already on the product.';
 
 /** Build a multi-view prompt for Gemini with reference image. */
 export function buildMultiViewPrompt(angle: MultiViewAngle, userNotes?: string): string {
