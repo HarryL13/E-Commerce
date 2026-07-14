@@ -21,10 +21,10 @@ const ANGLE_INSTRUCTIONS: Record<MultiViewAngle, string> = {
 };
 
 const QUALITY_SUFFIX_WHITE =
-  'Professional e-commerce product photography, soft even studio lighting, sharp focus. Pure solid white background (#FFFFFF), product perfectly centered in frame with generous even margins. No text overlays, watermarks, colored backdrop, gradients, or props unless already on the product.';
+  'Professional e-commerce product photography, soft even studio lighting, ultra-sharp focus, high detail, crisp edges. Pure solid white background (#FFFFFF), product perfectly centered in frame with generous even margins. High-resolution commercial catalog quality. No text overlays, watermarks, colored backdrop, gradients, or props unless already on the product.';
 
 const QUALITY_SUFFIX_BLACK_CUTOUT =
-  'Professional e-commerce product photography, soft even studio lighting, sharp focus. CRITICAL: render the product isolated on a pure solid white background (#FFFFFF) with clean sharp edges — no grey backdrop, no floor shadow, no gradient, no vignette. The white area must be completely uniform for background removal. Product perfectly centered with generous margins. No text overlays or watermarks.';
+  'Professional e-commerce product photography, soft even studio lighting, ultra-sharp focus, high detail, crisp edges. CRITICAL: render the product isolated on a pure solid white background (#FFFFFF) with clean sharp edges — no grey backdrop, no floor shadow, no gradient, no vignette. The white area must be completely uniform for background removal. Product perfectly centered with generous margins. High-resolution commercial catalog quality. No text overlays or watermarks.';
 
 function qualitySuffixForBase(skuBase?: SkuBaseVariant): string {
   return skuBase === 'black' ? QUALITY_SUFFIX_BLACK_CUTOUT : QUALITY_SUFFIX_WHITE;

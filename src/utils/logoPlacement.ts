@@ -36,8 +36,8 @@ The SECOND image is the brand logo. Place this logo on the product image.
 
 Logo placement: ${positionDesc}.
 Logo size: approximately ${sizeDesc}. Keep the logo's original proportions (no stretching or squashing).
-The logo must be crisp, readable, and professionally integrated with subtle contrast so it stands out on the product image.
-Do not add watermarks, extra text, or borders unless requested.`;
+The logo must be crisp, high-resolution, readable, and professionally integrated with subtle contrast so it stands out on the product image.
+Ultra-sharp commercial catalog quality. Do not add watermarks, extra text, or borders unless requested.`;
 
   const trimmed = optionalPrompt?.trim();
   if (trimmed) {

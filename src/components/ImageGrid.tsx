@@ -1,4 +1,4 @@
-// Changes: Gallery with POD/大货 quick SKU, selection order badges, SKU-linked download names.
+// Changes: Gallery selection badges; selected order is reordered via SelectableImageStrip drag.
 import React from 'react';
 import { Download, Trash2, Calendar, Ratio, Image as ImageIcon, Package, Boxes, Link2 } from 'lucide-react';
 import { GeneratedImage } from '../types';
@@ -68,7 +68,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
                       ? 'bg-indigo-600 border-indigo-600 text-white'
                       : 'bg-white/90 border-zinc-300 text-transparent hover:border-indigo-400'
                   }`}
-                  title="Select for SKU carousel (click order = gallery sequence)"
+                  title="Select for SKU carousel (drag selected strip to reorder)"
                 >
                   {selNum ?? '✓'}
                 </button>

@@ -253,7 +253,7 @@ export default function SkuApp({
     // Create previews concurrently
     try {
       const previews = await Promise.all(
-        updatedFiles.map((file) => resizeImage(file, 800, 800))
+        updatedFiles.map((file) => resizeImage(file, 1536, 1536))
       );
       setImagePreviews(previews);
     } catch (err) {

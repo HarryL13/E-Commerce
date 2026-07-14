@@ -1,8 +1,9 @@
-// Changes: Smaller reference uploads for faster Gemini / proxy image API calls.
+// Changes: Higher-res reference uploads (1536px) for high-precision Gemini / proxy generation.
 import { compressDataUrl } from './imageUtils';
 
-export const API_REFERENCE_MAX_PX = 768;
-export const API_REFERENCE_QUALITY = 0.8;
+/** Keep product detail for 2K generation — was 768 for speed. */
+export const API_REFERENCE_MAX_PX = 1536;
+export const API_REFERENCE_QUALITY = 0.92;
 
 export async function prepareReferenceForApi(
   dataUrl: string | null | undefined

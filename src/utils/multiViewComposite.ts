@@ -1,4 +1,4 @@
-// Changes: Black-base compositing — flood-fill white matting so product is transparent on template.
+// Changes: High-precision Multi-View composite — render at 2K so cutouts keep generation resolution.
 import { SKU_BASE_TEMPLATES, SkuBaseVariant } from './skuBaseTemplates';
 import {
   NEW_TAG_ASSETS,
@@ -6,6 +6,9 @@ import {
   NewTagTextVariant,
   newTagVariantForSkuBase,
 } from './newTagOverlay';
+
+/** Match Gemini 2K output — templates are upscaled before compositing. */
+const COMPOSITE_OUTPUT_PX = 2048;
 
 /** Fraction of canvas used for the centered product slot (logo stays in corner). */
 const PRODUCT_SLOT_RATIO = 0.72;
@@ -359,12 +362,14 @@ export async function compositeMultiViewOnSkuBase(
       : null;
 
   const canvas = document.createElement('canvas');
-  canvas.width = template.width;
-  canvas.height = template.height;
+  canvas.width = COMPOSITE_OUTPUT_PX;
+  canvas.height = COMPOSITE_OUTPUT_PX;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas not supported');
 
-  ctx.drawImage(template, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
 
   const slotSize = Math.round(Math.min(canvas.width, canvas.height) * PRODUCT_SLOT_RATIO);
   const slotX = Math.round((canvas.width - slotSize) / 2);

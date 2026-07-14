@@ -13,6 +13,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
 import { ImageGrid } from './components/ImageGrid';
+import { SelectableImageStrip } from './components/SelectableImageStrip';
 import { UploadZone } from './components/UploadZone';
 import { MultiUploadZone } from './components/MultiUploadZone';
 import { Button } from './components/Button';
@@ -274,6 +275,26 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     });
   }, []);
 
+  const reorderSelection = useCallback((fromIndex: number, toIndex: number) => {
+    setSelectionOrder((prev) => {
+      const active = prev.filter((id) => selectedImageIds.has(id));
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= active.length ||
+        toIndex >= active.length ||
+        fromIndex === toIndex
+      ) {
+        return prev;
+      }
+      const nextActive = [...active];
+      const [moved] = nextActive.splice(fromIndex, 1);
+      nextActive.splice(toIndex, 0, moved);
+      const inactive = prev.filter((id) => !selectedImageIds.has(id));
+      return [...nextActive, ...inactive];
+    });
+  }, [selectedImageIds]);
+
   const handleSendToOptimizer = useCallback(
     (studioImages: GeneratedImage[]) => {
       if (!onSendToOptimizer || studioImages.length === 0) return;
@@ -314,7 +335,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         setError("Please upload an image first.");
         return;
       }
-      const fullPrompt = `Change the background of this image to ${color}. ${promptDetails} Keep the main subject exactly as is.`;
+      const fullPrompt = `Change the background of this image to ${color}. ${promptDetails} Keep the main subject exactly as is, ultra-sharp high-resolution product detail.`;
       handleGenerate(fullPrompt, '1:1', bgImage);
     } else {
       if (bgBatchFiles.length === 0) {
@@ -335,7 +356,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
             return;
         }
 
-        const fullPrompt = `Change the background of this image to ${color}. ${promptDetails} Keep the main subject exactly as is.`;
+        const fullPrompt = `Change the background of this image to ${color}. ${promptDetails} Keep the main subject exactly as is, ultra-sharp high-resolution product detail.`;
 
         const results = await runPool(
           bgBatchFiles,
@@ -1863,12 +1884,12 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
               <h2 className="text-xl font-semibold text-zinc-900">Shared History</h2>
               {workflowUxMode === 'pipeline' ? (
                 <p className="text-sm text-zinc-500 mt-1 max-w-2xl">
-                  完整流程图片库。按顺序勾选（第 1 张 = 主图），然后
+                  全 tab 共享的图片库。勾选后可在上方拖拽调整顺序（第 1 张 = 主图），再
                   <strong className="text-indigo-700"> 继续生成 SKU</strong> 进入下一步。
                 </p>
               ) : (
                 <p className="text-sm text-zinc-500 mt-1 max-w-2xl">
-                  独立使用 — 所有 tab 生成的图片集中在此。可选勾选后推送到 SKU Generator。
+                  独立使用 — 所有 tab 生成的图片集中在此。勾选后可拖拽调整顺序，再推送到 SKU Generator。
                 </p>
               )}
             </div>
@@ -1957,12 +1978,11 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
                   {selectedOrderedImages.length > 0 && onSendToSku ? (
                     <div className="space-y-3">
-                      <p className="text-xs text-zinc-600">
-                        已选 <span className="font-medium text-indigo-700">{selectedOrderedImages.length}</span>{' '}
-                        张 · #{1} 主图
-                        {selectedOrderedImages.length > 1 &&
-                          ` · #2–${selectedOrderedImages.length} 轮播`}
-                      </p>
+                      <SelectableImageStrip
+                        images={selectedOrderedImages}
+                        onReorder={reorderSelection}
+                        onRemove={toggleImageSelection}
+                      />
                       <Button
                         size="lg"
                         className="w-full sm:w-auto"
@@ -1975,7 +1995,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                     </div>
                   ) : (
                     <p className="text-xs text-zinc-500">
-                      在下方网格按顺序点击勾选图片 — 选好后点击「继续生成 SKU」
+                      在下方网格勾选图片，然后拖拽调整顺序 — 选好后点击「继续生成 SKU」
                     </p>
                   )}
 
@@ -2044,35 +2064,39 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                   )}
 
                   {selectedOrderedImages.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-xs text-zinc-600 mr-auto">
-                        已选 {selectedOrderedImages.length} 张（可选操作）
-                      </p>
-                      {onSendToSku && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleSendToSku(selectedOrderedImages, galleryMode)}
-                        >
-                          <Package className="w-3.5 h-3.5 mr-1.5" />
-                          推送到 SKU Generator
-                        </Button>
-                      )}
-                      {onSendToOptimizer && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-violet-700 hover:bg-violet-50"
-                          onClick={() => handleSendToOptimizer(selectedOrderedImages)}
-                        >
-                          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-                          Push to Optimizer
-                        </Button>
-                      )}
+                    <div className="space-y-3">
+                      <SelectableImageStrip
+                        images={selectedOrderedImages}
+                        onReorder={reorderSelection}
+                        onRemove={toggleImageSelection}
+                      />
+                      <div className="flex flex-wrap items-center gap-3">
+                        {onSendToSku && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleSendToSku(selectedOrderedImages, galleryMode)}
+                          >
+                            <Package className="w-3.5 h-3.5 mr-1.5" />
+                            推送到 SKU Generator
+                          </Button>
+                        )}
+                        {onSendToOptimizer && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-violet-700 hover:bg-violet-50"
+                            onClick={() => handleSendToOptimizer(selectedOrderedImages)}
+                          >
+                            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                            Push to Optimizer
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <p className="text-xs text-zinc-500">
-                      勾选图片后可推送到 SKU Generator 或 Optimizer（非必须）
+                      勾选图片后可拖拽调整顺序，再推送到 SKU Generator 或 Optimizer（非必须）
                     </p>
                   )}
                 </>

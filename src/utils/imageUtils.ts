@@ -1,4 +1,4 @@
-// Changes: Added compressDataUrl to shrink reference images before Gemini API calls (faster upload).
+// Changes: High-fidelity resize default for SKU uploads before Gemini analyze / generate.
 export const resizeImage = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -29,7 +29,7 @@ export const resizeImage = (file: File, maxWidth: number, maxHeight: number): Pr
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
+        resolve(canvas.toDataURL('image/jpeg', 0.92));
       };
       img.onerror = reject;
       if (e.target?.result) {

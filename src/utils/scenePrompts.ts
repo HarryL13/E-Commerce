@@ -4,7 +4,7 @@
 export const SCENE_PRODUCT_PRESERVE = `The reference image is the exact product to feature. Preserve the product faithfully: same shape, colors, materials, textures, proportions, branding, and fine details. Do not redesign, replace, crop out, or distort the product. Only change the environment, lighting, and camera framing around it.`;
 
 export const SCENE_QUALITY_SUFFIX =
-  'Professional e-commerce product photography, natural lighting, sharp focus on the product, realistic shadows and reflections, shallow depth of field on background, commercial quality. No text, watermarks, logos, or borders unless already on the product.';
+  'Professional e-commerce product photography, natural lighting, ultra-sharp focus on the product, high detail, realistic shadows and reflections, shallow depth of field on background, high-resolution commercial catalog quality. No text, watermarks, logos, or borders unless already on the product.';
 
 export type SceneSmartType = 'scene' | 'ugc' | 'interaction';
 
