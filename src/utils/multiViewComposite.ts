@@ -7,8 +7,8 @@ import {
   newTagVariantForSkuBase,
 } from './newTagOverlay';
 
-/** Match Gemini 2K output — templates are upscaled before compositing. */
-const COMPOSITE_OUTPUT_PX = 2048;
+/** Match Gemini 2K output when requested — templates are upscaled before compositing. */
+const COMPOSITE_OUTPUT_PX = 1024;
 
 /** Fraction of canvas used for the centered product slot (logo stays in corner). */
 const PRODUCT_SLOT_RATIO = 0.72;
@@ -337,6 +337,8 @@ function drawNewTagBottomLeft(
 
 export type MultiViewCompositeOptions = {
   newTag?: NewTagOverlayOptions;
+  /** Output canvas size in px (defaults to 1024 / 1K). */
+  outputPx?: number;
 };
 
 /**
@@ -361,9 +363,10 @@ export async function compositeMultiViewOnSkuBase(
       ? await loadNewTagWithTransparency(newTagVariant)
       : null;
 
+  const outputPx = options.outputPx ?? COMPOSITE_OUTPUT_PX;
   const canvas = document.createElement('canvas');
-  canvas.width = COMPOSITE_OUTPUT_PX;
-  canvas.height = COMPOSITE_OUTPUT_PX;
+  canvas.width = outputPx;
+  canvas.height = outputPx;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas not supported');
 

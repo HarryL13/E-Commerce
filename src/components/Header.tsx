@@ -1,18 +1,19 @@
-// Changes: Image Studio subheader — tabs + model only (no duplicate title); fixed-height row.
+// Changes: Image Studio subheader — tabs + 1K/2K precision (model selector removed).
 import React from 'react';
 import { Layers, Grid3X3, Palette, Stamp } from 'lucide-react';
-import { ModelType, AppTab, IMAGE_MODEL_OPTIONS, getModelLabel } from '../types';
+import { AppTab } from '../types';
+import { ImageSize, IMAGE_SIZE_OPTIONS } from '../utils/imageQuality';
 
 interface HeaderProps {
-  currentModel: ModelType;
-  onModelChange: (model: ModelType) => void;
+  imageSize: ImageSize;
+  onImageSizeChange: (size: ImageSize) => void;
   activeTab: AppTab;
   onTabChange: (tab: AppTab) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentModel,
-  onModelChange,
+  imageSize,
+  onImageSizeChange,
   activeTab,
   onTabChange,
 }) => {
@@ -43,23 +44,33 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
 
-        <label className="flex items-center gap-2 shrink-0 border-l border-zinc-200 pl-3">
+        <div
+          className="flex items-center gap-2 shrink-0 border-l border-zinc-200 pl-3"
+          role="group"
+          aria-label="生成精度"
+        >
           <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">
-            Model
+            精度
           </span>
-          <select
-            className="studio-select font-mono truncate max-w-[10rem] sm:max-w-[14rem]"
-            value={currentModel}
-            onChange={(e) => onModelChange(e.target.value as ModelType)}
-            aria-label="Image generation model"
-          >
-            {IMAGE_MODEL_OPTIONS.map((modelId) => (
-              <option key={modelId} value={modelId}>
-                {getModelLabel(modelId)}
-              </option>
+          <div className="studio-tab-group p-0.5">
+            {IMAGE_SIZE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onImageSizeChange(opt.value)}
+                className={`studio-tab px-3 py-1.5 text-xs font-semibold ${
+                  imageSize === opt.value ? 'studio-tab-active' : ''
+                }`}
+                title={opt.hint}
+              >
+                {opt.label}
+                <span className="hidden sm:inline text-[10px] font-normal text-zinc-400 ml-1">
+                  {opt.hint}
+                </span>
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
       </div>
     </header>
   );

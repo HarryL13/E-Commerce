@@ -1,4 +1,4 @@
-// Changes: Force high-precision image output — Gemini imageSize 2K + proxy quality high.
+// Changes: Client-selectable Gemini imageSize (1K/2K); default 1K for faster generation.
 import { Env } from './auth';
 import {
   analyzeProductForImageGen,
@@ -6,9 +6,13 @@ import {
   resolveProxyConfig,
 } from './upstream';
 
-/** Gemini 3 image models support 1K / 2K / 4K — default HD for ecommerce. */
-export const GEMINI_IMAGE_SIZE = '2K';
+export type GeminiImageSize = '1K' | '2K';
+export const DEFAULT_GEMINI_IMAGE_SIZE: GeminiImageSize = '1K';
 export const PROXY_IMAGE_QUALITY = 'high';
+
+export function normalizeImageSize(value: unknown): GeminiImageSize {
+  return value === '2K' ? '2K' : DEFAULT_GEMINI_IMAGE_SIZE;
+}
 
 export type ImageGenResult = {
   image: string;
@@ -40,7 +44,13 @@ export type ImageGenRequest = {
   productDescription?: string;
   /** Skip slow direct Google calls; use company proxy (recommended locally). */
   preferProxy?: boolean;
+  /** Gemini output resolution — 1K (faster) or 2K (sharper). */
+  imageSize?: GeminiImageSize;
 };
+
+function resolveImageSize(body: ImageGenRequest): GeminiImageSize {
+  return normalizeImageSize(body.imageSize);
+}
 
 const DIRECT_GEMINI_TIMEOUT_MS = 45_000;
 const DIRECT_GEMINI_REFERENCE_TIMEOUT_MS = 120_000;
@@ -180,7 +190,7 @@ async function generateViaProxyImagesApi(
     payload.extra_body = {
       image_config: {
         aspect_ratio: body.aspectRatio,
-        image_size: GEMINI_IMAGE_SIZE,
+        image_size: resolveImageSize(body),
       },
     };
   }
@@ -241,7 +251,7 @@ async function generateViaProxyGeminiNative(
           responseModalities: ['TEXT', 'IMAGE'],
           imageConfig: {
             aspectRatio: body.aspectRatio,
-            imageSize: GEMINI_IMAGE_SIZE,
+            imageSize: resolveImageSize(body),
           },
         },
       }),
@@ -291,7 +301,7 @@ async function generateViaGeminiNative(
           responseModalities: ['TEXT', 'IMAGE'],
           imageConfig: {
             aspectRatio: body.aspectRatio,
-            imageSize: GEMINI_IMAGE_SIZE,
+            imageSize: resolveImageSize(body),
           },
         },
       }),

@@ -1,14 +1,7 @@
-// Changes:
-// - Removed direct @google/genai SDK usage from the browser. All Gemini
-//   calls (analyze + generate) now go through our serverless proxies at
-//   /api/gemini-analyze and /api/gemini-generate so the GEMINI_API_KEY
-//   stays on the server.
-// - `ensureApiKey` was tied to the old in-browser AI Studio "select key"
-//   flow; it's no longer needed because the server holds the key. Kept as
-//   a no-op stub so existing call sites don't have to change.
-// - `generateImageFromGemini` supports preferProxy + productDescription for local Multi-View fallback.
+// Changes: Image gen options include imageSize (1K/2K); model still routed via endpoint helper.
 import { AspectRatio, ModelType } from '../types';
 import { getImageGenerateEndpoint } from '../utils/imageModels';
+import { ImageSize, DEFAULT_IMAGE_SIZE } from '../utils/imageQuality';
 import { apiFetch } from './authClient';
 
 // Kept as a no-op for back-compat with existing UI call sites.
@@ -31,6 +24,7 @@ export const analyzeImage = async (base64Image: string): Promise<string> => {
 export type ImageGenOptions = {
   productDescription?: string;
   preferProxy?: boolean;
+  imageSize?: ImageSize;
   onMode?: (mode: string) => void;
 };
 
@@ -46,6 +40,7 @@ export const generateImageFromGemini = async (
     prompt,
     aspectRatio,
     model,
+    imageSize: options?.imageSize ?? DEFAULT_IMAGE_SIZE,
   };
 
   if (referenceImages && referenceImages.length > 0) {

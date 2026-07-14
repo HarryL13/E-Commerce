@@ -21,6 +21,12 @@ import { GeneratedImage, AspectRatio, ModelType, AppTab, LogoPosition } from './
 import { generateImageFromGemini, ensureApiKey, analyzeImage } from './services/geminiService';
 import { resolveGeminiImageModel } from './utils/imageModels';
 import {
+  ImageSize,
+  compositePxForImageSize,
+  readImageSizePreference,
+  writeImageSizePreference,
+} from './utils/imageQuality';
+import {
   MULTIVIEW_ANGLES,
   buildMultiViewPrompt,
   buildMultiViewPromptWithProduct,
@@ -48,7 +54,6 @@ import {
 import { compositeMultiViewOnSkuBase } from './utils/multiViewComposite';
 import {
   NEW_TAG_ASSETS,
-  NEW_TAG_SCALE_DEFAULT,
   NEW_TAG_SCALE_MAX,
   NEW_TAG_SCALE_MIN,
   newTagVariantForSkuBase,
@@ -94,7 +99,8 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   onGoToOptimizer,
 }) => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
-  const [model, setModel] = useState<ModelType>(ModelType.GEMINI_31_FLASH_IMAGE);
+  const [imageSize, setImageSize] = useState<ImageSize>(() => readImageSizePreference());
+  const model = ModelType.GEMINI_31_FLASH_IMAGE;
   const [images, setImages] = useState<GeneratedImage[]>(() => getStoredImages());
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
   const [selectionOrder, setSelectionOrder] = useState<string[]>([]);
@@ -167,8 +173,9 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     }
   }, [skuLineSelection]);
 
-  const handleModelChange = (nextModel: ModelType) => {
-    setModel(nextModel);
+  const handleImageSizeChange = (next: ImageSize) => {
+    setImageSize(next);
+    writeImageSizePreference(next);
   };
 
   const selectMultiViewSkuBase = (variant: SkuBaseVariant) => {
@@ -194,12 +201,26 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           enabled: multiViewNewTagEnabled,
           scalePercent: multiViewNewTagScale,
         },
+        outputPx: compositePxForImageSize(imageSize),
       });
     } catch (err) {
       console.warn('SKU base composite failed, using raw image', err);
       return rawUrl;
     }
   };
+
+  const prepRef = useCallback(
+    (dataUrl: string | null | undefined) => prepareReferenceForApi(dataUrl, imageSize),
+    [imageSize]
+  );
+
+  const genOpts = useCallback(
+    (extra?: { productDescription?: string; preferProxy?: boolean }) => ({
+      imageSize,
+      ...extra,
+    }),
+    [imageSize]
+  );
 
   const handleGenerate = useCallback(async (
     prompt: string, 
@@ -211,7 +232,6 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     setIsGenerating(true);
     setProgressMessage("Generating...");
 
-    // Use override if provided, otherwise current state
     const targetModel = modelOverride || model;
 
     try {
@@ -222,12 +242,14 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         return;
       }
 
-      const refForApi = await prepareReferenceForApi(referenceImg);
+      const refForApi = await prepRef(referenceImg);
       const base64Image = await generateImageFromGemini(
         prompt, 
         aspectRatio, 
         targetModel, 
-        refForApi
+        refForApi,
+        undefined,
+        genOpts()
       );
 
       const newImage: GeneratedImage = {
@@ -249,7 +271,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
       setIsGenerating(false);
       setProgressMessage(null);
     }
-  }, [model, activeTab]);
+  }, [model, activeTab, prepRef, genOpts]);
 
   const handleDelete = useCallback((id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
@@ -363,12 +385,14 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           IMAGE_GEN_POOL_SIZE,
           async ({ preview, file }) => {
             try {
-              const ref = await prepareReferenceForApi(preview);
+              const ref = await prepRef(preview);
               const generatedBase64 = await generateImageFromGemini(
                 fullPrompt,
                 '1:1',
                 targetModel,
-                ref
+                ref,
+                undefined,
+                genOpts()
               );
 
               const newImage: GeneratedImage = {
@@ -428,7 +452,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           return;
       }
 
-      const refForApi = await prepareReferenceForApi(multiViewImage);
+      const refForApi = await prepRef(multiViewImage);
       let productDescription = 'product';
       try {
         productDescription = await analyzeImage(refForApi ?? multiViewImage);
@@ -437,8 +461,6 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
       }
 
       setProgressMessage('Generating Front, Top, Side, and Zoom in parallel…');
-
-      const genOptions = { productDescription };
 
       const results = await runPool(
         MULTIVIEW_ANGLES,
@@ -452,7 +474,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
               targetModel,
               refForApi,
               undefined,
-              genOptions
+              genOpts({ productDescription })
             );
 
             const finalUrl = await applyMultiViewSkuBase(base64Image);
@@ -523,14 +545,13 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           multiViewBatchFiles,
           2,
           async ({ preview, file }, fileIndex) => {
-            const refForApi = await prepareReferenceForApi(preview);
+            const refForApi = await prepRef(preview);
             let productDescription = 'product';
             try {
               productDescription = await analyzeImage(refForApi ?? preview);
             } catch {
               productDescription = 'product';
             }
-            const genOptions = { productDescription };
 
             const viewResults = await runPool(
               MULTIVIEW_ANGLES,
@@ -544,7 +565,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                     targetModel,
                     refForApi,
                     undefined,
-                    genOptions
+                    genOpts({ productDescription })
                   );
                   const finalUrl = await applyMultiViewSkuBase(base64Image);
                   const newImage: GeneratedImage = {
@@ -609,12 +630,14 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           async ({ preview }, i) => {
             try {
               const prompt = promptGenerator(i);
-              const ref = await prepareReferenceForApi(preview);
+              const ref = await prepRef(preview);
               const generatedBase64 = await generateImageFromGemini(
                 prompt,
                 aspectRatio,
                 targetModel,
-                ref
+                ref,
+                undefined,
+                genOpts()
               );
 
               const newImage: GeneratedImage = {
@@ -690,7 +713,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     setProgressMessage("Analyzing image...");
 
     try {
-      const sceneRef = await prepareReferenceForApi(sceneImage);
+      const sceneRef = await prepRef(sceneImage);
       const objectDescription = await analyzeImage(sceneRef ?? sceneImage!);
       const prompts = buildSceneSmartPrompts(type, true, objectDescription, (items, count) =>
         shuffleArray(items).slice(0, count)
@@ -704,7 +727,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         async (prompt) => {
           try {
             const base64Image = await generateImageFromGemini(
-              prompt, '1:1', targetModel, sceneRef
+              prompt, '1:1', targetModel, sceneRef, undefined, genOpts()
             );
             const newImage: GeneratedImage = {
               id: crypto.randomUUID(),
@@ -866,14 +889,15 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     fileLabel?: string
   ) => {
     const prompt = buildLogoPlacementPrompt(logoPosition, logoSizePercent, logoPrompt);
-    const productRef = await prepareReferenceForApi(productPreview);
-    const logoRef = await prepareReferenceForApi(logoImage);
+    const productRef = await prepRef(productPreview);
+    const logoRef = await prepRef(logoImage);
     const generatedBase64 = await generateImageFromGemini(
       prompt,
       logoAspectRatio,
       model,
       undefined,
-      [productRef ?? productPreview, logoRef ?? logoImage!]
+      [productRef ?? productPreview, logoRef ?? logoImage!],
+      genOpts()
     );
 
     const newImage: GeneratedImage = {
@@ -1838,8 +1862,8 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     <div className="image-studio-root">
 
       <Header
-        currentModel={model}
-        onModelChange={handleModelChange}
+        imageSize={imageSize}
+        onImageSizeChange={handleImageSizeChange}
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />

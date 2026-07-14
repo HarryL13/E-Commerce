@@ -1,4 +1,4 @@
-// Changes: Product Optimizer — workflow pending count sync; main offset for workflow bar.
+// Changes: Optimizer — After selecting a product, Replace Images opens Shared History picker.
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Search,
@@ -13,8 +13,10 @@ import {
   Sparkles,
   X,
   ImageIcon,
+  Images,
 } from 'lucide-react';
 import { DescriptionEditor } from './components/DescriptionEditor';
+import { HistoryImagePicker } from './components/HistoryImagePicker';
 import {
   listShopifyProducts,
   getShopifyProduct,
@@ -65,6 +67,7 @@ export default function ProductOptimizerApp({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<ShopifyCatalogProduct | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingStudioImage[]>([]);
+  const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -207,8 +210,8 @@ export default function ProductOptimizerApp({
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Product Optimizer</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Pull live products from Shopify, search by title, edit listing & SEO, then save back.
-            Push images from Image Studio to replace a product gallery in one save.
+            搜索 Shopify 产品并编辑 listing。替换图片有两种方式：
+            （1）Image Studio → Push to Optimizer；（2）选中产品后点「Replace Images」从 Shared History 选图。
           </p>
         </div>
 
@@ -419,6 +422,15 @@ export default function ProductOptimizerApp({
                       </a>
                       <button
                         type="button"
+                        onClick={() => setHistoryPickerOpen(true)}
+                        className="btn-secondary text-sm"
+                        title="从 Image Studio Shared History 选择图片替换图库"
+                      >
+                        <Images className="w-4 h-4 mr-1.5 inline" />
+                        Replace Images
+                      </button>
+                      <button
+                        type="button"
                         onClick={handleSave}
                         disabled={saving}
                         className="btn-primary text-sm"
@@ -437,10 +449,28 @@ export default function ProductOptimizerApp({
 
                   {pendingImages.length > 0 && (
                     <div className="mb-6 p-4 rounded-xl border border-indigo-200 bg-indigo-50/50">
-                      <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wider mb-3 flex items-center gap-2">
-                        <ImageIcon className="w-4 h-4" />
-                        Pending gallery replace
-                      </p>
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wider flex items-center gap-2">
+                          <ImageIcon className="w-4 h-4" />
+                          Pending gallery replace
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setHistoryPickerOpen(true)}
+                            className="text-[11px] text-indigo-700 hover:text-indigo-900 font-medium"
+                          >
+                            重新选图
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingImages([])}
+                            className="text-[11px] text-zinc-500 hover:text-red-600"
+                          >
+                            清除
+                          </button>
+                        </div>
+                      </div>
                       <div className="flex flex-wrap gap-3">
                         {pendingNamed.map((img, i) => (
                           <div key={img.sourceImageId} className="flex flex-col items-center gap-1">
@@ -456,8 +486,27 @@ export default function ProductOptimizerApp({
                         ))}
                       </div>
                       <p className="text-xs text-zinc-500 mt-3">
-                        Current Shopify hero shown above will be replaced on save.
+                        点击「Save + Replace」后将整库替换为以上图片（当前 Shopify Hero 见上方缩略图）。
                       </p>
+                    </div>
+                  )}
+
+                  {pendingImages.length === 0 && (
+                    <div className="mb-6 p-4 rounded-xl border border-dashed border-zinc-200 bg-zinc-50/80 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-zinc-800">替换产品图库</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          从 Shared History 选择图片，或先在 Image Studio 勾选后 Push to Optimizer
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setHistoryPickerOpen(true)}
+                        className="btn-secondary text-sm shrink-0"
+                      >
+                        <Images className="w-4 h-4 mr-1.5 inline" />
+                        Replace Images
+                      </button>
                     </div>
                   )}
 
@@ -585,6 +634,17 @@ export default function ProductOptimizerApp({
           </div>
         </div>
       </main>
+
+      <HistoryImagePicker
+        open={historyPickerOpen}
+        onClose={() => setHistoryPickerOpen(false)}
+        productHandle={draft?.handle}
+        onConfirm={(images) => {
+          setPendingImages(images);
+          setSuccessMsg(`已选 ${images.length} 张 History 图片 — 点击 Save + Replace 写入 Shopify`);
+          setTimeout(() => setSuccessMsg(null), 4000);
+        }}
+      />
     </div>
   );
 }
