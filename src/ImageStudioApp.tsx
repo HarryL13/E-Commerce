@@ -1,4 +1,4 @@
-// Changes: Persist History to IndexedDB; merge on focus so tab-switch doesn't wipe gens.
+// Changes: All Studio generation defaults to 1:1 aspect (Scene custom prompt included).
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -1729,7 +1729,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                         placeholder={sceneMode === 'batch' 
                             ? "Describe the scene for ALL items (e.g., 'floating in outer space')..." 
                             : "Describe a custom scene for your object..."}
-                        defaultAspectRatio="16:9"
+                        defaultAspectRatio="1:1"
                         value={scenePrompt}
                         onInputChange={setScenePrompt}
                      />
@@ -1744,7 +1744,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                      {images.filter(i => i.tab === AppTab.SCENE).slice(0, 4).map(img => (
-                        <div key={img.id} className="group relative aspect-video bg-white rounded-2xl overflow-hidden border border-zinc-200 hover:border-zinc-300 transition-all">
+                        <div key={img.id} className="group relative aspect-square bg-white rounded-2xl overflow-hidden border border-zinc-200 hover:border-zinc-300 transition-all">
                           <img 
                             src={img.url} 
                             alt={img.prompt} 
