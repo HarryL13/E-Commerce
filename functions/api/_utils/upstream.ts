@@ -1,4 +1,4 @@
-// Changes: Shared product image analysis with direct Gemini + proxy vision fallback.
+// Changes: Prefer proxy vision for product analyze — Direct Google hang was breaking gen fallback.
 import { Env } from './auth';
 import {
   DEFAULT_GEMINI_TEXT_MODEL,
@@ -149,43 +149,46 @@ function toDataUrl(base64Image: string): string {
   return `data:image/png;base64,${base64Image}`;
 }
 
-/** Analyze a product photo — direct Gemini first, then proxy vision (works without VPN). */
+/** Analyze a product photo — proxy vision first when configured (Direct Google often hangs). */
 export async function analyzeProductForImageGen(env: Env, base64Image: string): Promise<string> {
   const directKey = resolveDirectGeminiApiKey(env);
+  const proxy = resolveProxyConfig(env);
   const imagePart = imageBase64ToPart(base64Image);
+
+  if (proxy.useProxy) {
+    try {
+      const text = await proxyChatCompletion(
+        env,
+        getProxyVisionModel(env),
+        [
+          { type: 'text', text: PRODUCT_ANALYZE_PROMPT },
+          { type: 'image_url', image_url: { url: toDataUrl(base64Image) } },
+        ],
+        { maxTokens: 128, temperature: 0.2, timeoutMs: ANALYZE_TIMEOUT_MS }
+      );
+      if (text?.trim()) return text.trim();
+    } catch {
+      // fall through to Direct
+    }
+  }
 
   if (directKey && imagePart) {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
-      try {
-        const text = await geminiGenerateText(
+      const text = await Promise.race([
+        geminiGenerateText(
           directKey,
           DEFAULT_GEMINI_TEXT_MODEL,
           [imagePart, { text: PRODUCT_ANALYZE_PROMPT }],
           { maxOutputTokens: 128, temperature: 0.2 }
-        );
-        if (text?.trim()) return text.trim();
-      } finally {
-        clearTimeout(timer);
-      }
+        ),
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('Direct analyze timed out')), 8_000)
+        ),
+      ]);
+      if (text?.trim()) return text.trim();
     } catch {
-      // fall through to proxy
+      // ignore
     }
-  }
-
-  const proxy = resolveProxyConfig(env);
-  if (proxy.useProxy) {
-    const text = await proxyChatCompletion(
-      env,
-      getProxyVisionModel(env),
-      [
-        { type: 'text', text: PRODUCT_ANALYZE_PROMPT },
-        { type: 'image_url', image_url: { url: toDataUrl(base64Image) } },
-      ],
-      { maxTokens: 128, temperature: 0.2, timeoutMs: ANALYZE_TIMEOUT_MS }
-    );
-    if (text?.trim()) return text.trim();
   }
 
   return 'product';

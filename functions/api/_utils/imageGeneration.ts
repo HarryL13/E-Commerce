@@ -1,4 +1,5 @@
-// Changes: Client-selectable Gemini imageSize (1K/2K); default 1K for faster generation.
+// Changes: Fast-fail Direct Gemini (8s) when proxy exists so CF 30s wall-time doesn't kill
+// requests before proxy fallback; map non-preview model ids to proxy-valid *-preview names.
 import { Env } from './auth';
 import {
   analyzeProductForImageGen,
@@ -12,6 +13,17 @@ export const PROXY_IMAGE_QUALITY = 'high';
 
 export function normalizeImageSize(value: unknown): GeminiImageSize {
   return value === '2K' ? '2K' : DEFAULT_GEMINI_IMAGE_SIZE;
+}
+
+/** Lumina/LiteLLM only lists *-preview image models — aliases strip clients use. */
+const PROXY_MODEL_ALIASES: Record<string, string> = {
+  'gemini-3.1-flash-image': 'gemini-3.1-flash-image-preview',
+  'gemini-2.5-flash-image': 'gemini-2.5-flash-image-preview',
+  'gemini-3-pro-image': 'gemini-3-pro-image-preview',
+};
+
+function mapModelForProxy(model: string): string {
+  return PROXY_MODEL_ALIASES[model] || model;
 }
 
 export type ImageGenResult = {
@@ -54,8 +66,12 @@ function resolveImageSize(body: ImageGenRequest): GeminiImageSize {
 
 const DIRECT_GEMINI_TIMEOUT_MS = 45_000;
 const DIRECT_GEMINI_REFERENCE_TIMEOUT_MS = 120_000;
-/** When proxy fallback exists, fail fast on direct Google and use proxy text mode. */
-const DIRECT_GEMINI_REFERENCE_FAST_TIMEOUT_MS = 55_000;
+/**
+ * Cloudflare Pages Functions ≈30s total wall time. When a proxy exists, burn at most
+ * a few seconds on Direct Google so analyze+proxy still have room to finish.
+ */
+const DIRECT_GEMINI_REFERENCE_FAST_TIMEOUT_MS = 8_000;
+const DIRECT_GEMINI_FAST_TIMEOUT_MS = 8_000;
 const PROXY_GEMINI_TIMEOUT_MS = 100_000;
 
 async function fetchWithTimeout(
@@ -65,17 +81,31 @@ async function fetchWithTimeout(
   label: string
 ): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    // Promise.race so hung sockets still fail even when AbortSignal is ignored.
+    return await Promise.race([
+      fetch(url, { ...init, signal: controller.signal }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject({
+            message: `${label} timed out after ${Math.round(timeoutMs / 1000)}s`,
+          });
+        }, timeoutMs);
+      }),
+    ]);
   } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'message' in err) {
+      throw err;
+    }
     const message =
       err instanceof Error && err.name === 'AbortError'
         ? `${label} timed out after ${Math.round(timeoutMs / 1000)}s`
         : `${label} failed: ${err instanceof Error ? err.message : 'network error'}`;
     throw { message };
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -178,15 +208,16 @@ async function generateViaProxyImagesApi(
   body: ImageGenRequest
 ): Promise<string> {
   const size = mapAspectRatioToOpenAiSize(body.aspectRatio);
+  const proxyModel = mapModelForProxy(body.model);
   const payload: Record<string, unknown> = {
-    model: body.model,
+    model: proxyModel,
     prompt: body.prompt,
     size,
     quality: PROXY_IMAGE_QUALITY,
     response_format: 'b64_json',
   };
 
-  if (GEMINI_IMAGE_MODELS.has(body.model)) {
+  if (GEMINI_IMAGE_MODELS.has(body.model) || GEMINI_IMAGE_MODELS.has(proxyModel)) {
     payload.extra_body = {
       image_config: {
         aspect_ratio: body.aspectRatio,
@@ -238,7 +269,7 @@ async function generateViaProxyGeminiNative(
   parts.push({ text: body.prompt });
 
   const upstream = await fetchWithTimeout(
-    `${baseUrl}/v1beta/models/${body.model}:generateContent`,
+    `${baseUrl}/v1beta/models/${mapModelForProxy(body.model)}:generateContent`,
     {
       method: 'POST',
       headers: {
@@ -386,8 +417,25 @@ export async function generateImageResult(env: Env, body: ImageGenRequest): Prom
   if (GEMINI_IMAGE_MODELS.has(body.model)) {
     const directKey = resolveDirectGeminiApiKey(env);
     const proxy = resolveProxyConfig(env);
+    // Proxy is reachable in-region; Direct Google often hangs (China / CF wall time).
+    // Prefer proxy whenever configured so we never burn the request on a dead Direct call.
+    const useProxyFirst = Boolean(proxy.useProxy);
 
-    if (body.preferProxy && proxy.useProxy) {
+    if (useProxyFirst) {
+      try {
+        const description =
+          body.productDescription?.trim() ||
+          (referenceImages.length > 0
+            ? await analyzeProductForImageGen(env, referenceImages[0])
+            : undefined);
+        const image = await generateViaProxyImagesWithDescription(env, body, description);
+        return { image, mode: 'proxy-text' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Proxy images', err).message);
+      }
+    }
+
+    if (body.preferProxy && proxy.useProxy && !useProxyFirst) {
       try {
         const image = await generateViaProxyImagesWithDescription(
           env,
@@ -400,7 +448,7 @@ export async function generateImageResult(env: Env, body: ImageGenRequest): Prom
       }
     }
 
-    if (!body.preferProxy && directKey && referenceImages.length > 0) {
+    if (!useProxyFirst && !body.preferProxy && directKey && referenceImages.length > 0) {
       const directTimeout = proxy.useProxy
         ? DIRECT_GEMINI_REFERENCE_FAST_TIMEOUT_MS
         : DIRECT_GEMINI_REFERENCE_TIMEOUT_MS;
@@ -415,18 +463,19 @@ export async function generateImageResult(env: Env, body: ImageGenRequest): Prom
       } catch (err: unknown) {
         errors.push(formatUpstreamError('Direct Gemini', err).message);
       }
-    } else if (!body.preferProxy && directKey && referenceImages.length === 0) {
+    } else if (!useProxyFirst && !body.preferProxy && directKey && referenceImages.length === 0) {
+      const directTimeout = proxy.useProxy ? DIRECT_GEMINI_FAST_TIMEOUT_MS : DIRECT_GEMINI_TIMEOUT_MS;
       try {
-        const image = await generateViaGeminiNative(directKey, body, referenceImages);
+        const image = await generateViaGeminiNative(directKey, body, referenceImages, directTimeout);
         return { image, mode: 'direct-reference' };
       } catch (err: unknown) {
         errors.push(formatUpstreamError('Direct Gemini', err).message);
       }
-    } else if (!directKey) {
+    } else if (!directKey && !proxy.useProxy) {
       errors.push('GEMINI_DIRECT_API_KEY is not set.');
     }
 
-    if (proxy.useProxy && !body.preferProxy && referenceImages.length > 0) {
+    if (!useProxyFirst && proxy.useProxy && !body.preferProxy && referenceImages.length > 0) {
       try {
         const description =
           body.productDescription?.trim() ||
@@ -438,7 +487,7 @@ export async function generateImageResult(env: Env, body: ImageGenRequest): Prom
       }
     }
 
-    if (proxy.useProxy && referenceImages.length === 0 && !body.preferProxy) {
+    if (!useProxyFirst && proxy.useProxy && referenceImages.length === 0 && !body.preferProxy) {
       try {
         const image = await generateViaProxyImagesWithDescription(
           env,
@@ -451,8 +500,23 @@ export async function generateImageResult(env: Env, body: ImageGenRequest): Prom
       }
     }
 
+    // Last resort: Direct, after proxy failed
+    if (useProxyFirst && directKey) {
+      try {
+        const image = await generateViaGeminiNative(
+          directKey,
+          body,
+          referenceImages,
+          DIRECT_GEMINI_REFERENCE_FAST_TIMEOUT_MS
+        );
+        return { image, mode: 'direct-reference' };
+      } catch (err: unknown) {
+        errors.push(formatUpstreamError('Direct Gemini (fallback)', err).message);
+      }
+    }
+
     throw {
-      message: `Image generation failed. ${errors.join(' · ')}`,
+      message: `Image generation failed. ${errors.join(' · ') || 'No upstream succeeded.'}`,
     };
   }
 
