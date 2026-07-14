@@ -1,4 +1,4 @@
-// Changes: Two UX modes — standalone vs pipeline; mode switch in header.
+// Changes: Pass active flag to Optimizer so it live-refetches Shopify when tab opens.
 import React, { useState, useCallback } from 'react';
 import SkuApp from './SkuApp';
 import ImageStudioApp from './ImageStudioApp';
@@ -127,6 +127,7 @@ export default function App() {
       </div>
       <div className={activeModule === 'optimizer' ? '' : 'hidden'}>
         <ProductOptimizerApp
+          active={activeModule === 'optimizer'}
           handoff={optimizerHandoff}
           onHandoffConsumed={() => {
             setOptimizerHandoff(null);

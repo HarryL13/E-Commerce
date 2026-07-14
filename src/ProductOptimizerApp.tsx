@@ -1,4 +1,4 @@
-// Changes: Optimizer — After selecting a product, Replace Images opens Shared History picker.
+// Changes: Optimizer refreshes live Shopify catalog when tab becomes active / window focuses.
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Search,
@@ -47,10 +47,13 @@ function statusBadgeClass(status: string) {
 }
 
 export default function ProductOptimizerApp({
+  active = true,
   handoff = null,
   onHandoffConsumed,
   onPendingCountChange,
 }: {
+  /** When false the module is hidden but still mounted — skip background polls. */
+  active?: boolean;
   handoff?: OptimizerHandoff | null;
   onHandoffConsumed?: () => void;
   onPendingCountChange?: (count: number) => void;
@@ -63,6 +66,7 @@ export default function ProductOptimizerApp({
   const [hasMore, setHasMore] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<ShopifyCatalogProduct | null>(null);
@@ -75,6 +79,12 @@ export default function ProductOptimizerApp({
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHandoffId = useRef<string | null>(null);
+  const selectedIdRef = useRef<number | null>(null);
+  const wasActiveRef = useRef(false);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     if (!handoff || handoff.id === lastHandoffId.current) return;
@@ -112,6 +122,7 @@ export default function ProductOptimizerApp({
         setProducts((prev) => (append ? [...prev, ...result.products] : result.products));
         setCursor(result.pageInfo.endCursor);
         setHasMore(result.pageInfo.hasNextPage);
+        if (!append) setLastSyncedAt(new Date());
       } catch (err: unknown) {
         setListError(err instanceof Error ? err.message : 'Failed to load products.');
       } finally {
@@ -121,27 +132,72 @@ export default function ProductOptimizerApp({
     [searchQuery, statusFilter]
   );
 
-  useEffect(() => {
-    void fetchList(false);
-    setSelectedId(null);
-    setDraft(null);
-  }, [fetchList]);
-
-  const loadProduct = async (id: number) => {
+  const loadProduct = useCallback(async (id: number, opts?: { silent?: boolean }) => {
     setSelectedId(id);
-    setDetailLoading(true);
-    setError(null);
-    setSuccessMsg(null);
+    if (!opts?.silent) {
+      setDetailLoading(true);
+      setError(null);
+      setSuccessMsg(null);
+    }
     try {
       const { product } = await getShopifyProduct(id);
       setDraft(product);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load product.');
-      setDraft(null);
+      if (!opts?.silent) {
+        setError(err instanceof Error ? err.message : 'Failed to load product.');
+        setDraft(null);
+      }
     } finally {
-      setDetailLoading(false);
+      if (!opts?.silent) setDetailLoading(false);
     }
-  };
+  }, []);
+
+  const refreshFromShopify = useCallback(async () => {
+    await fetchList(false);
+    const id = selectedIdRef.current;
+    if (id) {
+      await loadProduct(id, { silent: true });
+    }
+  }, [fetchList, loadProduct]);
+
+  // Live Shopify sync: refresh when opening Optimizer, or when search/status changes
+  useEffect(() => {
+    if (!active) {
+      wasActiveRef.current = false;
+      return;
+    }
+
+    const becameActive = !wasActiveRef.current;
+    wasActiveRef.current = true;
+
+    void fetchList(false);
+
+    if (becameActive) {
+      const id = selectedIdRef.current;
+      if (id) void loadProduct(id, { silent: true });
+    } else {
+      // Search / status changed while already on this tab
+      setSelectedId(null);
+      setDraft(null);
+    }
+  }, [active, searchQuery, statusFilter, fetchList, loadProduct]);
+
+  // Refresh when the browser tab regains focus while Optimizer is open
+  useEffect(() => {
+    if (!active) return;
+    const onFocus = () => {
+      void refreshFromShopify();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') onFocus();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [active, refreshFromShopify]);
 
   const handleSave = async () => {
     if (!draft) return;
@@ -191,7 +247,7 @@ export default function ProductOptimizerApp({
       }
 
       setDraft((prev) => (prev ? { ...prev, adminUrl: result.adminUrl } : prev));
-      void fetchList(false);
+      await refreshFromShopify();
       setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed.');
@@ -283,7 +339,7 @@ export default function ProductOptimizerApp({
                   type="search"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search by title..."
+                  placeholder="Search title / handle / SKU…"
                   className="input-modern pl-10"
                 />
               </div>
@@ -305,13 +361,18 @@ export default function ProductOptimizerApp({
               </div>
               <button
                 type="button"
-                onClick={() => fetchList(false)}
+                onClick={() => void refreshFromShopify()}
                 disabled={listLoading}
                 className="btn-secondary w-full text-sm"
               >
                 <RefreshCw className={`w-4 h-4 mr-2 inline ${listLoading ? 'animate-spin' : ''}`} />
                 Refresh from Shopify
               </button>
+              {lastSyncedAt ? (
+                <p className="text-[10px] text-zinc-400 text-center">
+                  最近同步：{lastSyncedAt.toLocaleTimeString()}
+                </p>
+              ) : null}
             </div>
 
             <div className="studio-card p-0 overflow-hidden max-h-[calc(100vh-280px)] flex flex-col">

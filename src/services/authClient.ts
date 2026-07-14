@@ -1,8 +1,4 @@
-// Changes:
-// - New helper that reads the saved password from localStorage and attaches
-//   it as the x-app-password header on every /api/* fetch. Used by the
-//   rewritten service layer so individual callers don't have to think about
-//   auth. Also exposes a tiny wrapper `apiFetch` for consistent error UX.
+// Changes: apiFetch uses cache: no-store so Optimizer catalog stays live.
 
 export const AUTH_STORAGE_KEY = 'ecs_auth_v1';
 
@@ -52,8 +48,10 @@ export async function apiFetch<T = any>(
     headers: {
       'Content-Type': 'application/json',
       'x-app-password': password,
+      'Cache-Control': 'no-store',
     },
     body: JSON.stringify(body ?? {}),
+    cache: 'no-store',
     ...init,
   });
 

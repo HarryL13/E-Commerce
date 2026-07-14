@@ -1,4 +1,4 @@
-// Changes: Env bindings for unified LiteLLM proxy + direct API keys.
+// Changes: jsonResponse sends Cache-Control no-store so Shopify catalog isn't mid-cached.
 //   null (if authenticated) or a Response to immediately return from the
 //   caller. Usage pattern:
 //     const denied = requireAuth(request, env);
@@ -33,6 +33,7 @@ export function jsonResponse(body: unknown, status = 200, extraHeaders: Record<s
     status,
     headers: {
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
       ...extraHeaders,
     },
   });

@@ -1,4 +1,4 @@
-// Changes: Shopify catalog — GraphQL search/list, get product, update product for Product Optimizer.
+// Changes: Catalog list/search also matches handle + SKU; no stale-title-only lookups.
 import { Env } from './auth';
 
 const API_VERSION = '2024-01';
@@ -86,9 +86,10 @@ async function shopifyGraphql(
 
 function buildSearchQuery(search?: string, status?: ShopifyCatalogStatus): string {
   const parts: string[] = [];
-  const q = search?.trim();
+  const q = search?.trim().replace(/"/g, '');
   if (q) {
-    parts.push(`title:*${q.replace(/"/g, '')}*`);
+    // Title-only search felt "not live" when looking up by handle/SKU after publish.
+    parts.push(`(title:*${q}* OR handle:*${q}* OR sku:*${q}*)`);
   }
   if (status && status !== 'all') {
     parts.push(`status:${status}`);
