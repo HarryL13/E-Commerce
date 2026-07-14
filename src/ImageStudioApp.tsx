@@ -1,4 +1,4 @@
-// Changes: Multi-View angle retry + always-visible History download; UX modes pipeline dock.
+// Changes: Central auto-retry on all gens; Multiview multi-round angle recovery + download always visible.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -33,7 +33,7 @@ import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Load
 import { SkuHandoff, SkuHandoffMode, createSkuHandoffFromImages, orderedImagesFromSelection } from './utils/skuHandoff';
 import { createOptimizerHandoffFromImages } from './utils/optimizerHandoff';
 import { prepareReferenceForApi } from './utils/imageApiPrep';
-import { runPool, IMAGE_GEN_POOL_SIZE, MULTIVIEW_POOL_SIZE, withRetry } from './utils/runPool';
+import { runPool, IMAGE_GEN_POOL_SIZE, MULTIVIEW_POOL_SIZE } from './utils/runPool';
 import { StudioWorkflowSnapshot } from './components/WorkflowBar';
 import {
   SKU_BASE_TEMPLATES,
@@ -207,6 +207,9 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   const genOpts = useCallback(
     (extra?: { productDescription?: string; preferProxy?: boolean }) => ({
       imageSize,
+      onRetry: (attempt: number, maxAttempts: number) => {
+        setProgressMessage(`失败自动重试 ${attempt}/${maxAttempts}…`);
+      },
       ...extra,
     }),
     [imageSize]
@@ -453,17 +456,16 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
       const generateAngle = async (view: (typeof MULTIVIEW_ANGLES)[number]) => {
         const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
-        const base64Image = await withRetry(
-          () =>
-            generateImageFromGemini(
-              fullPrompt,
-              ratio,
-              targetModel,
-              refForApi,
-              undefined,
-              genOpts({ productDescription })
-            ),
-          { retries: 2, delayMs: 1200 }
+        const base64Image = await generateImageFromGemini(
+          fullPrompt,
+          ratio,
+          targetModel,
+          refForApi,
+          undefined,
+          genOpts({
+            productDescription,
+            retries: 1, // angle-level: 2 tries; outer recovery rounds cover the rest
+          })
         );
         const finalUrl = await applyMultiViewSkuBase(base64Image);
         const newImage: GeneratedImage = {
@@ -495,21 +497,28 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         (done, total) => setProgressMessage(`Multi-View ${done}/${total}…`)
       );
 
-      const failedAngles = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null);
-      if (failedAngles.length > 0) {
-        setProgressMessage(`Retrying missing: ${failedAngles.map((v) => v.label).join(', ')}…`);
+      // Auto-recover missing angles for several rounds (each angle still retries inside).
+      const MAX_RECOVERY_ROUNDS = 3;
+      for (let round = 1; round <= MAX_RECOVERY_ROUNDS; round++) {
+        const failedAngles = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null);
+        if (failedAngles.length === 0) break;
+
+        setProgressMessage(
+          `自动补全缺失视角 (${round}/${MAX_RECOVERY_ROUNDS}): ${failedAngles.map((v) => v.labelZh).join('、')}…`
+        );
+
         for (const view of failedAngles) {
           const idx = MULTIVIEW_ANGLES.findIndex((v) => v.key === view.key);
           try {
             firstPass[idx] = await generateAngle(view);
           } catch (err) {
-            console.error(`Retry failed ${view.label}:`, err);
+            console.error(`Recovery round ${round} failed ${view.label}:`, err);
           }
         }
       }
 
       const successCount = firstPass.filter((r): r is GeneratedImage => r !== null).length;
-      const stillFailed = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null).map((v) => v.label);
+      const stillFailed = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null).map((v) => v.labelZh);
 
       if (successCount === 0) {
         throw new Error('Failed to generate any views. Try a clearer reference photo or check VPN/proxy.');
@@ -517,7 +526,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
       if (stillFailed.length > 0) {
         setError(
-          `Only ${successCount}/${MULTIVIEW_ANGLES.length} views succeeded (missing: ${stillFailed.join(', ')}). Click Generate again to fill gaps.`
+          `自动重试后仍缺 ${stillFailed.join('、')}（${successCount}/${MULTIVIEW_ANGLES.length}）。可再点一次 Generate 补全。`
         );
       }
 
@@ -571,17 +580,13 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
               async (view) => {
                 try {
                   const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
-                  const base64Image = await withRetry(
-                    () =>
-                      generateImageFromGemini(
-                        fullPrompt,
-                        ratio,
-                        targetModel,
-                        refForApi,
-                        undefined,
-                        genOpts({ productDescription })
-                      ),
-                    { retries: 2, delayMs: 1200 }
+                  const base64Image = await generateImageFromGemini(
+                    fullPrompt,
+                    ratio,
+                    targetModel,
+                    refForApi,
+                    undefined,
+                    genOpts({ productDescription })
                   );
                   const finalUrl = await applyMultiViewSkuBase(base64Image);
                   const newImage: GeneratedImage = {

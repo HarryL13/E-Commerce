@@ -1,4 +1,4 @@
-// Changes: withRetry + lower Multiview pool size to cut proxy 3/4 partial failures.
+// Changes: withRetry supports onRetry callback for auto-regenerate progress UI.
 export async function runPool<T, R>(
   items: T[],
   concurrency: number,
@@ -31,20 +31,29 @@ export const IMAGE_GEN_POOL_SIZE = 3;
 /** Multi-View is 4 angles — keep concurrency low to avoid Lumina rate / CF flakes. */
 export const MULTIVIEW_POOL_SIZE = 2;
 
+/** Default: 1 initial try + 2 retries = 3 generations max per call. */
+export const IMAGE_GEN_RETRIES = 2;
+
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  opts: { retries?: number; delayMs?: number } = {}
+  opts: {
+    retries?: number;
+    delayMs?: number;
+    onRetry?: (attempt: number, maxAttempts: number, error: unknown) => void;
+  } = {}
 ): Promise<T> {
-  const retries = opts.retries ?? 2;
+  const retries = opts.retries ?? IMAGE_GEN_RETRIES;
   const delayMs = opts.delayMs ?? 1500;
+  const maxAttempts = retries + 1;
   let lastErr: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+      if (attempt < maxAttempts) {
+        opts.onRetry?.(attempt + 1, maxAttempts, err);
+        await new Promise((r) => setTimeout(r, delayMs * attempt));
       }
     }
   }
