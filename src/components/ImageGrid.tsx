@@ -1,4 +1,4 @@
-// Changes: Gallery selection badges; selected order is reordered via SelectableImageStrip drag.
+// Changes: Download/delete always visible on History cards (not hover-only).
 import React from 'react';
 import { Download, Trash2, Calendar, Ratio, Image as ImageIcon, Package, Boxes, Link2 } from 'lucide-react';
 import { GeneratedImage } from '../types';
@@ -75,7 +75,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
               )}
 
               {img.linkedHandle && (
-                <div className="absolute top-3 right-3 z-10 flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-600/90 text-white text-[10px] font-semibold">
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-600/90 text-white text-[10px] font-semibold">
                   <Link2 className="w-3 h-3" />
                   {img.linkedHandle}
                 </div>
@@ -87,12 +87,32 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
               />
 
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-                {onSendToSku && (
+              {/* Always-visible download/delete on every card */}
+              <div className="absolute top-3 right-3 z-10 flex gap-2">
+                <a
+                  href={img.url}
+                  download={downloadName}
+                  className="p-2 bg-white/95 hover:bg-white rounded-full text-zinc-800 border border-zinc-200 shadow-sm"
+                  title={`Download as ${downloadName}`}
+                >
+                  <Download className="w-4 h-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => onDelete(img.id)}
+                  className="p-2 bg-red-500/90 hover:bg-red-500 rounded-full text-white shadow-sm"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              {onSendToSku && (
+                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
                     onClick={() => onSendToSku([img])}
-                    className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-white text-xs font-semibold transition-colors mb-3 ${
+                    className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-white text-xs font-semibold transition-colors ${
                       skuLine === 'pod' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-amber-600 hover:bg-amber-500'
                     }`}
                   >
@@ -108,26 +128,8 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
                       </>
                     )}
                   </button>
-                )}
-
-                <div className="flex gap-2 justify-end">
-                  <a
-                    href={img.url}
-                    download={downloadName}
-                    className="p-2 bg-white/90 hover:bg-white rounded-full text-zinc-800 border border-zinc-200 transition-colors shadow-sm"
-                    title={`Download as ${downloadName}`}
-                  >
-                    <Download className="w-4 h-4" />
-                  </a>
-                  <button
-                    onClick={() => onDelete(img.id)}
-                    className="p-2 bg-red-500/90 hover:bg-red-500 rounded-full text-white transition-colors shadow-sm"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="p-4 bg-white border-t border-zinc-100">

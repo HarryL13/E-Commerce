@@ -1,14 +1,4 @@
-// Changes:
-// - Fixed top padding so content isn't hidden under the double header. The outer
-//   App.tsx sticky bar is 56px (h-14) and the inner Image Studio Header (now fixed
-//   at top-14) is 64px (h-16), totaling ~120px. Increased main's pt-28 -> pt-32.
-// - Also bumped the progress toast's `top-24` -> `top-32` so it appears under both
-//   headers instead of on top of the inner tab bar.
-// - Added Logo Brand tab: upload logo + product image(s), position & size controls,
-//   optional prompt, AI compositing via Gemini multi-image reference.
-// - Logo Brand product upload supports 1–10 images in one queue (no single/batch toggle).
-// - Scene Gen prompts centralized in utils/scenePrompts.ts with product-preservation instructions.
-// Changes: UX modes — pipeline dock (继续生成 SKU) vs standalone Shared History.
+// Changes: Multi-View angle retry + always-visible History download; UX modes pipeline dock.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -43,7 +33,7 @@ import { AlertCircle, Wand2, Layers, Grid3X3, Palette, BrainCircuit, Users, Load
 import { SkuHandoff, SkuHandoffMode, createSkuHandoffFromImages, orderedImagesFromSelection } from './utils/skuHandoff';
 import { createOptimizerHandoffFromImages } from './utils/optimizerHandoff';
 import { prepareReferenceForApi } from './utils/imageApiPrep';
-import { runPool, IMAGE_GEN_POOL_SIZE } from './utils/runPool';
+import { runPool, IMAGE_GEN_POOL_SIZE, MULTIVIEW_POOL_SIZE, withRetry } from './utils/runPool';
 import { StudioWorkflowSnapshot } from './components/WorkflowBar';
 import {
   SKU_BASE_TEMPLATES,
@@ -431,6 +421,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   };
 
   // --- MultiView Tab Handler (Single) ---
+  // Parallel 4-angle gen often drops 1 view on proxy rate limits; retry failures.
   const handleMultiViewGenerate = async () => {
     if (!multiViewImage) {
       setError('Please upload a reference product image. Multi-View needs the original photo to preserve the product.');
@@ -460,37 +451,42 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         productDescription = 'product';
       }
 
-      setProgressMessage('Generating Front, Top, Side, and Zoom in parallel…');
-
-      const results = await runPool(
-        MULTIVIEW_ANGLES,
-        IMAGE_GEN_POOL_SIZE,
-        async (view) => {
-          try {
-            const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
-            const base64Image = await generateImageFromGemini(
+      const generateAngle = async (view: (typeof MULTIVIEW_ANGLES)[number]) => {
+        const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
+        const base64Image = await withRetry(
+          () =>
+            generateImageFromGemini(
               fullPrompt,
               ratio,
               targetModel,
               refForApi,
               undefined,
               genOpts({ productDescription })
-            );
+            ),
+          { retries: 2, delayMs: 1200 }
+        );
+        const finalUrl = await applyMultiViewSkuBase(base64Image);
+        const newImage: GeneratedImage = {
+          id: crypto.randomUUID(),
+          url: finalUrl,
+          prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
+          timestamp: Date.now(),
+          aspectRatio: ratio,
+          model: targetModel,
+          tab: AppTab.MULTIVIEW,
+        };
+        setImages((prev) => [newImage, ...prev]);
+        return newImage;
+      };
 
-            const finalUrl = await applyMultiViewSkuBase(base64Image);
+      setProgressMessage('Generating Front, Top, Side, and Zoom…');
 
-            const newImage: GeneratedImage = {
-              id: crypto.randomUUID(),
-              url: finalUrl,
-              prompt: `${view.label}: ${fullPrompt.slice(0, 80)}...`,
-              timestamp: Date.now(),
-              aspectRatio: ratio,
-              model: targetModel,
-              tab: AppTab.MULTIVIEW,
-            };
-
-            setImages((prev) => [newImage, ...prev]);
-            return newImage;
+      const firstPass = await runPool(
+        MULTIVIEW_ANGLES,
+        MULTIVIEW_POOL_SIZE,
+        async (view) => {
+          try {
+            return await generateAngle(view);
           } catch (err) {
             console.error(`Failed ${view.label} view:`, err);
             return null;
@@ -499,14 +495,30 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         (done, total) => setProgressMessage(`Multi-View ${done}/${total}…`)
       );
 
-      const successCount = results.filter((r): r is GeneratedImage => r !== null).length;
+      const failedAngles = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null);
+      if (failedAngles.length > 0) {
+        setProgressMessage(`Retrying missing: ${failedAngles.map((v) => v.label).join(', ')}…`);
+        for (const view of failedAngles) {
+          const idx = MULTIVIEW_ANGLES.findIndex((v) => v.key === view.key);
+          try {
+            firstPass[idx] = await generateAngle(view);
+          } catch (err) {
+            console.error(`Retry failed ${view.label}:`, err);
+          }
+        }
+      }
+
+      const successCount = firstPass.filter((r): r is GeneratedImage => r !== null).length;
+      const stillFailed = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null).map((v) => v.label);
 
       if (successCount === 0) {
         throw new Error('Failed to generate any views. Try a clearer reference photo or check VPN/proxy.');
       }
 
-      if (successCount < MULTIVIEW_ANGLES.length) {
-        setError(`Only ${successCount}/${MULTIVIEW_ANGLES.length} views succeeded. You can retry for the missing angles.`);
+      if (stillFailed.length > 0) {
+        setError(
+          `Only ${successCount}/${MULTIVIEW_ANGLES.length} views succeeded (missing: ${stillFailed.join(', ')}). Click Generate again to fill gaps.`
+        );
       }
 
     } catch (err: any) {
@@ -555,17 +567,21 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
             const viewResults = await runPool(
               MULTIVIEW_ANGLES,
-              IMAGE_GEN_POOL_SIZE,
+              MULTIVIEW_POOL_SIZE,
               async (view) => {
                 try {
                   const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
-                  const base64Image = await generateImageFromGemini(
-                    fullPrompt,
-                    ratio,
-                    targetModel,
-                    refForApi,
-                    undefined,
-                    genOpts({ productDescription })
+                  const base64Image = await withRetry(
+                    () =>
+                      generateImageFromGemini(
+                        fullPrompt,
+                        ratio,
+                        targetModel,
+                        refForApi,
+                        undefined,
+                        genOpts({ productDescription })
+                      ),
+                    { retries: 2, delayMs: 1200 }
                   );
                   const finalUrl = await applyMultiViewSkuBase(base64Image);
                   const newImage: GeneratedImage = {

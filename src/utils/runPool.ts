@@ -1,4 +1,4 @@
-// Changes: Bounded parallel task runner for faster batch image generation.
+// Changes: withRetry + lower Multiview pool size to cut proxy 3/4 partial failures.
 export async function runPool<T, R>(
   items: T[],
   concurrency: number,
@@ -25,4 +25,28 @@ export async function runPool<T, R>(
   return results;
 }
 
+/** General batch/gen concurrency. */
 export const IMAGE_GEN_POOL_SIZE = 3;
+
+/** Multi-View is 4 angles — keep concurrency low to avoid Lumina rate / CF flakes. */
+export const MULTIVIEW_POOL_SIZE = 2;
+
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; delayMs?: number } = {}
+): Promise<T> {
+  const retries = opts.retries ?? 2;
+  const delayMs = opts.delayMs ?? 1500;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
