@@ -1,4 +1,4 @@
-// Changes: Central auto-retry on all gens; Multiview multi-round angle recovery + download always visible.
+// Changes: Persist History to IndexedDB; merge on focus so tab-switch doesn't wipe gens.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -57,6 +57,9 @@ import {
   setStoredImages,
   removeStoredImage,
   clearStoredImages,
+  persistGeneratedImage,
+  hydrateStoredImages,
+  mergeImagesById,
   SkuLine,
 } from './utils/unifiedHistory';
 import { WorkflowUxMode } from './utils/workflowGuide';
@@ -91,7 +94,8 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.BACKGROUND);
   const [imageSize, setImageSize] = useState<ImageSize>(() => readImageSizePreference());
   const model = ModelType.GEMINI_31_FLASH_IMAGE;
-  const [images, setImages] = useState<GeneratedImage[]>(() => getStoredImages());
+  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
   const [selectionOrder, setSelectionOrder] = useState<string[]>([]);
   const [skuLineSelection, setSkuLineSelection] = useState<SkuLine>(() => {
@@ -106,6 +110,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const isGeneratingRef = useRef(false);
 
   // Background Modes
   const [bgMode, setBgMode] = useState<'single' | 'batch'>('single');
@@ -146,14 +151,67 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   const [logoAspectRatio, setLogoAspectRatio] = useState<AspectRatio>('1:1');
 
   useEffect(() => {
-    const syncFromStorage = () => setImages(getStoredImages());
+    isGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
+
+  // Hydrate History from IndexedDB (pixels) + localStorage (meta)
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const hydrated = await hydrateStoredImages(getStoredImages());
+        if (!cancelled) setImages(hydrated);
+      } catch (e) {
+        console.error('History hydrate failed', e);
+        if (!cancelled) setImages(getStoredImages().filter((img) => Boolean(img.url)));
+      } finally {
+        if (!cancelled) setHistoryReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Focus/visibility: MERGE with storage — never wipe in-memory gens (esp. mid-batch).
+  useEffect(() => {
+    const syncFromStorage = () => {
+      if (isGeneratingRef.current) return;
+      void hydrateStoredImages(getStoredImages()).then((hydrated) => {
+        setImages((prev) => mergeImagesById(prev, hydrated));
+      });
+    };
     window.addEventListener('focus', syncFromStorage);
-    return () => window.removeEventListener('focus', syncFromStorage);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') syncFromStorage();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('focus', syncFromStorage);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, []);
 
   useEffect(() => {
+    if (!historyReady) return;
     setStoredImages(images);
-  }, [images]);
+  }, [images, historyReady]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isGeneratingRef.current) return;
+      e.preventDefault();
+      e.returnValue = '还在生成中，离开可能中断当前请求；已完成的图会保留。';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
+  /** Push into History UI + durable store immediately (survives tab switch). */
+  const commitGeneratedImage = useCallback((newImage: GeneratedImage) => {
+    setImages((prev) => [newImage, ...prev]);
+    void persistGeneratedImage(newImage);
+  }, []);
 
   useEffect(() => {
     try {
@@ -255,7 +313,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         tab: activeTab
       };
 
-      setImages(prev => [newImage, ...prev]);
+      commitGeneratedImage(newImage);
 
     } catch (err: any) {
       console.error(err);
@@ -264,7 +322,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
       setIsGenerating(false);
       setProgressMessage(null);
     }
-  }, [model, activeTab, prepRef, genOpts]);
+  }, [model, activeTab, prepRef, genOpts, commitGeneratedImage]);
 
   const handleDelete = useCallback((id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
@@ -398,7 +456,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                 tab: AppTab.BACKGROUND,
               };
 
-              setImages((prev) => [newImage, ...prev]);
+              commitGeneratedImage(newImage);
               return true;
             } catch (innerErr) {
               console.error('Background batch item failed:', innerErr);
@@ -462,10 +520,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           targetModel,
           refForApi,
           undefined,
-          genOpts({
-            productDescription,
-            retries: 1, // angle-level: 2 tries; outer recovery rounds cover the rest
-          })
+          genOpts({ productDescription })
         );
         const finalUrl = await applyMultiViewSkuBase(base64Image);
         const newImage: GeneratedImage = {
@@ -477,7 +532,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           model: targetModel,
           tab: AppTab.MULTIVIEW,
         };
-        setImages((prev) => [newImage, ...prev]);
+        commitGeneratedImage(newImage);
         return newImage;
       };
 
@@ -561,62 +616,90 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         }
 
         let overallSuccess = 0;
+        let overallMissing = 0;
 
-        const fileResults = await runPool(
-          multiViewBatchFiles,
-          2,
-          async ({ preview, file }, fileIndex) => {
-            const refForApi = await prepRef(preview);
-            let productDescription = 'product';
-            try {
-              productDescription = await analyzeImage(refForApi ?? preview);
-            } catch {
-              productDescription = 'product';
-            }
+        // Process products one at a time so leaving mid-batch still keeps finished products saved.
+        for (let fileIndex = 0; fileIndex < multiViewBatchFiles.length; fileIndex++) {
+          const { preview, file } = multiViewBatchFiles[fileIndex];
+          setProgressMessage(
+            `Multi-View batch ${fileIndex + 1}/${multiViewBatchFiles.length}: ${file.name.slice(0, 24)}…`
+          );
 
-            const viewResults = await runPool(
-              MULTIVIEW_ANGLES,
-              MULTIVIEW_POOL_SIZE,
-              async (view) => {
-                try {
-                  const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
-                  const base64Image = await generateImageFromGemini(
-                    fullPrompt,
-                    ratio,
-                    targetModel,
-                    refForApi,
-                    undefined,
-                    genOpts({ productDescription })
-                  );
-                  const finalUrl = await applyMultiViewSkuBase(base64Image);
-                  const newImage: GeneratedImage = {
-                    id: crypto.randomUUID(),
-                    url: finalUrl,
-                    prompt: `Batch (${file.name}): ${view.label}`,
-                    timestamp: Date.now(),
-                    aspectRatio: ratio,
-                    model: targetModel,
-                    tab: AppTab.MULTIVIEW,
-                  };
-                  setImages((prev) => [newImage, ...prev]);
-                  return true;
-                } catch (err) {
-                  console.error(`Batch item ${fileIndex + 1} ${view.label} failed:`, err);
-                  return false;
-                }
-              }
+          const refForApi = await prepRef(preview);
+          let productDescription = 'product';
+          try {
+            productDescription = await analyzeImage(refForApi ?? preview);
+          } catch {
+            productDescription = 'product';
+          }
+
+          const generateAngle = async (view: (typeof MULTIVIEW_ANGLES)[number]) => {
+            const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
+            const base64Image = await generateImageFromGemini(
+              fullPrompt,
+              ratio,
+              targetModel,
+              refForApi,
+              undefined,
+              genOpts({ productDescription })
             );
+            const finalUrl = await applyMultiViewSkuBase(base64Image);
+            const newImage: GeneratedImage = {
+              id: crypto.randomUUID(),
+              url: finalUrl,
+              prompt: `Batch (${file.name}): ${view.label}`,
+              timestamp: Date.now(),
+              aspectRatio: ratio,
+              model: targetModel,
+              tab: AppTab.MULTIVIEW,
+            };
+            commitGeneratedImage(newImage);
+            return true;
+          };
 
-            return viewResults.filter(Boolean).length;
-          },
-          (done, total) =>
-            setProgressMessage(`Multi-View batch ${done}/${total} products…`)
-        );
+          const firstPass = await runPool(
+            MULTIVIEW_ANGLES,
+            MULTIVIEW_POOL_SIZE,
+            async (view) => {
+              try {
+                return await generateAngle(view);
+              } catch (err) {
+                console.error(`Batch item ${fileIndex + 1} ${view.label} failed:`, err);
+                return false;
+              }
+            }
+          );
 
-        overallSuccess = fileResults.reduce((sum, n) => sum + n, 0);
+          const MAX_RECOVERY_ROUNDS = 3;
+          for (let round = 1; round <= MAX_RECOVERY_ROUNDS; round++) {
+            const failedAngles = MULTIVIEW_ANGLES.filter((_, i) => !firstPass[i]);
+            if (failedAngles.length === 0) break;
+            setProgressMessage(
+              `Batch ${fileIndex + 1}/${multiViewBatchFiles.length} 自动补全 (${round}/${MAX_RECOVERY_ROUNDS}): ${failedAngles
+                .map((v) => v.labelZh)
+                .join('、')}…`
+            );
+            for (const view of failedAngles) {
+              const idx = MULTIVIEW_ANGLES.findIndex((v) => v.key === view.key);
+              try {
+                firstPass[idx] = await generateAngle(view);
+              } catch (err) {
+                console.error(`Batch recovery failed ${view.label}:`, err);
+              }
+            }
+          }
 
-        if (overallSuccess === 0) throw new Error("Batch processing failed completely.");
+          const ok = firstPass.filter(Boolean).length;
+          overallSuccess += ok;
+          overallMissing += MULTIVIEW_ANGLES.length - ok;
+        }
 
+        if (overallSuccess === 0) throw new Error('Batch processing failed completely.');
+        if (overallMissing > 0) {
+          setError(
+            `Batch 完成：成功 ${overallSuccess} 张，仍缺 ${overallMissing} 张（已自动重试）。可对缺的产品再点 Generate。`
+          );
+        }
      } catch (err: any) {
          setError(err.message || "Batch Multi-View generation failed.");
      } finally {
@@ -671,7 +754,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                 tab: AppTab.SCENE,
               };
 
-              setImages((prev) => [newImage, ...prev]);
+              commitGeneratedImage(newImage);
               return true;
             } catch (innerErr) {
               console.error(`Scene batch item ${i} failed:`, innerErr);
@@ -759,7 +842,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
               model: targetModel,
               tab: AppTab.SCENE,
             };
-            setImages((prev) => [newImage, ...prev]);
+            commitGeneratedImage(newImage);
             return true;
           } catch (e) {
             console.error(e);
@@ -933,7 +1016,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
       tab: AppTab.LOGO,
     };
 
-    setImages(prev => [newImage, ...prev]);
+    commitGeneratedImage(newImage);
     return newImage;
   };
 

@@ -1,7 +1,11 @@
-// Changes: History image picker modal for Optimizer — pick Shared History images to replace gallery.
-import React, { useMemo, useState } from 'react';
-import { X, ImageIcon, Check } from 'lucide-react';
-import { getStoredImages, StoredImage } from '../utils/unifiedHistory';
+// Changes: Hydrate History picker from IndexedDB so Optimizer sees real image pixels.
+import React, { useEffect, useState } from 'react';
+import { X, ImageIcon, Check, Loader2 } from 'lucide-react';
+import {
+  getStoredImages,
+  hydrateStoredImages,
+  StoredImage,
+} from '../utils/unifiedHistory';
 import { PendingStudioImage } from '../utils/optimizerHandoff';
 
 type HistoryImagePickerProps = {
@@ -17,8 +21,25 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({
   onConfirm,
   productHandle,
 }) => {
-  const history = useMemo(() => (open ? getStoredImages() : []), [open]);
+  const [history, setHistory] = useState<StoredImage[]>([]);
+  const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    void hydrateStoredImages(getStoredImages())
+      .then((imgs) => {
+        if (!cancelled) setHistory(imgs);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -85,7 +106,12 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({
         </header>
 
         <div className="flex-1 overflow-y-auto p-5">
-          {history.length === 0 ? (
+          {loading ? (
+            <div className="py-16 text-center text-zinc-500">
+              <Loader2 className="w-8 h-8 mx-auto mb-3 text-indigo-500 animate-spin" />
+              <p className="text-sm">加载 History…</p>
+            </div>
+          ) : history.length === 0 ? (
             <div className="py-16 text-center text-zinc-500">
               <ImageIcon className="w-10 h-10 mx-auto mb-3 text-zinc-300" />
               <p className="text-sm font-medium text-zinc-700">Shared History 暂无图片</p>
