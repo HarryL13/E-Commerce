@@ -1,5 +1,4 @@
-// Changes: Multi-View prompts — black-base mode asks for isolated product on white for clean cutout.
-
+// Changes: Zoom detail angle is optional (default off); Front/Top/Side remain required.
 import { SkuBaseVariant } from './skuBaseTemplates';
 
 export type MultiViewAngle = 'front' | 'top' | 'side' | 'zoom';
@@ -10,6 +9,34 @@ export const MULTIVIEW_ANGLES: { key: MultiViewAngle; label: string; labelZh: st
   { key: 'side', label: 'Side', labelZh: '侧面' },
   { key: 'zoom', label: 'Zoom', labelZh: '细节' },
 ];
+
+/** Always-on angles for Multi-View. */
+export const MULTIVIEW_REQUIRED_ANGLES = MULTIVIEW_ANGLES.filter((a) => a.key !== 'zoom');
+
+export const MULTIVIEW_ZOOM_PREF_KEY = 'ecs_multiview_include_zoom';
+
+export function readMultiViewIncludeZoom(): boolean {
+  try {
+    return localStorage.getItem(MULTIVIEW_ZOOM_PREF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writeMultiViewIncludeZoom(include: boolean): void {
+  try {
+    localStorage.setItem(MULTIVIEW_ZOOM_PREF_KEY, include ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Front / Top / Side (+ Zoom when opted in). */
+export function getActiveMultiViewAngles(
+  includeZoom: boolean
+): typeof MULTIVIEW_ANGLES {
+  return includeZoom ? MULTIVIEW_ANGLES : (MULTIVIEW_REQUIRED_ANGLES as typeof MULTIVIEW_ANGLES);
+}
 
 const PRODUCT_PRESERVE = `The reference image is the exact product to photograph. Preserve the product faithfully: same shape, colors, materials, textures, proportions, branding, logos, and fine details. Do not redesign, replace, or invent a different product. Only change the camera angle and framing as instructed.`;
 

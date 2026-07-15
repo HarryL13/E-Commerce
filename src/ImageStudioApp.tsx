@@ -1,4 +1,4 @@
-// Changes: All Studio generation defaults to 1:1 aspect (Scene custom prompt included).
+// Changes: Multi-View Zoom is optional (default off); defaults to Front/Top/Side @ 1:1.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -18,8 +18,12 @@ import {
 } from './utils/imageQuality';
 import {
   MULTIVIEW_ANGLES,
+  MultiViewAngle,
   buildMultiViewPrompt,
   buildMultiViewPromptWithProduct,
+  getActiveMultiViewAngles,
+  readMultiViewIncludeZoom,
+  writeMultiViewIncludeZoom,
 } from './utils/multiViewPrompts';
 import { buildLogoPlacementPrompt, getLogoPositionLabel } from './utils/logoPlacement';
 import {
@@ -121,6 +125,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   const [multiViewSkuBase, setMultiViewSkuBase] = useState<SkuBaseVariant>(() => readSkuBasePreference());
   const [multiViewNewTagEnabled, setMultiViewNewTagEnabled] = useState(() => readNewTagEnabled());
   const [multiViewNewTagScale, setMultiViewNewTagScale] = useState(() => readNewTagScale());
+  const [multiViewIncludeZoom, setMultiViewIncludeZoom] = useState(() => readMultiViewIncludeZoom());
 
   // Separate upload state for each tab
   const [bgImage, setBgImage] = useState<string | null>(null);
@@ -241,6 +246,16 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     setMultiViewNewTagScale(clamped);
     writeNewTagScale(clamped);
   };
+
+  const toggleMultiViewIncludeZoom = (enabled: boolean) => {
+    setMultiViewIncludeZoom(enabled);
+    writeMultiViewIncludeZoom(enabled);
+  };
+
+  const activeMultiViewAngles = useMemo(
+    () => getActiveMultiViewAngles(multiViewIncludeZoom),
+    [multiViewIncludeZoom]
+  );
 
   const applyMultiViewSkuBase = async (rawUrl: string): Promise<string> => {
     try {
@@ -512,7 +527,10 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         productDescription = 'product';
       }
 
-      const generateAngle = async (view: (typeof MULTIVIEW_ANGLES)[number]) => {
+      const angles = activeMultiViewAngles;
+      type AngleItem = { key: MultiViewAngle; label: string; labelZh: string };
+      const angleListLabel = angles.map((v) => v.label).join(', ');
+      const generateAngle = async (view: AngleItem) => {
         const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
         const base64Image = await generateImageFromGemini(
           fullPrompt,
@@ -536,12 +554,12 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         return newImage;
       };
 
-      setProgressMessage('Generating Front, Top, Side, and Zoom…');
+      setProgressMessage(`Generating ${angleListLabel}…`);
 
       const firstPass = await runPool(
-        MULTIVIEW_ANGLES,
+        angles as AngleItem[],
         MULTIVIEW_POOL_SIZE,
-        async (view) => {
+        async (view: AngleItem) => {
           try {
             return await generateAngle(view);
           } catch (err) {
@@ -555,7 +573,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
       // Auto-recover missing angles for several rounds (each angle still retries inside).
       const MAX_RECOVERY_ROUNDS = 3;
       for (let round = 1; round <= MAX_RECOVERY_ROUNDS; round++) {
-        const failedAngles = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null);
+        const failedAngles = angles.filter((_, i) => firstPass[i] === null);
         if (failedAngles.length === 0) break;
 
         setProgressMessage(
@@ -563,7 +581,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         );
 
         for (const view of failedAngles) {
-          const idx = MULTIVIEW_ANGLES.findIndex((v) => v.key === view.key);
+          const idx = angles.findIndex((v) => v.key === view.key);
           try {
             firstPass[idx] = await generateAngle(view);
           } catch (err) {
@@ -573,7 +591,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
       }
 
       const successCount = firstPass.filter((r): r is GeneratedImage => r !== null).length;
-      const stillFailed = MULTIVIEW_ANGLES.filter((_, i) => firstPass[i] === null).map((v) => v.labelZh);
+      const stillFailed = angles.filter((_, i) => firstPass[i] === null).map((v) => v.labelZh);
 
       if (successCount === 0) {
         throw new Error('Failed to generate any views. Try a clearer reference photo or check VPN/proxy.');
@@ -581,7 +599,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
       if (stillFailed.length > 0) {
         setError(
-          `自动重试后仍缺 ${stillFailed.join('、')}（${successCount}/${MULTIVIEW_ANGLES.length}）。可再点一次 Generate 补全。`
+          `自动重试后仍缺 ${stillFailed.join('、')}（${successCount}/${angles.length}）。可再点一次 Generate 补全。`
         );
       }
 
@@ -633,7 +651,12 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
             productDescription = 'product';
           }
 
-          const generateAngle = async (view: (typeof MULTIVIEW_ANGLES)[number]) => {
+          const angles = activeMultiViewAngles as {
+            key: MultiViewAngle;
+            label: string;
+            labelZh: string;
+          }[];
+          const generateAngle = async (view: (typeof angles)[number]) => {
             const fullPrompt = buildMultiViewPrompt(view.key, undefined, multiViewSkuBase);
             const base64Image = await generateImageFromGemini(
               fullPrompt,
@@ -658,9 +681,9 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           };
 
           const firstPass = await runPool(
-            MULTIVIEW_ANGLES,
+            angles,
             MULTIVIEW_POOL_SIZE,
-            async (view) => {
+            async (view: (typeof angles)[number]) => {
               try {
                 return await generateAngle(view);
               } catch (err) {
@@ -672,7 +695,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
           const MAX_RECOVERY_ROUNDS = 3;
           for (let round = 1; round <= MAX_RECOVERY_ROUNDS; round++) {
-            const failedAngles = MULTIVIEW_ANGLES.filter((_, i) => !firstPass[i]);
+            const failedAngles = angles.filter((_, i) => !firstPass[i]);
             if (failedAngles.length === 0) break;
             setProgressMessage(
               `Batch ${fileIndex + 1}/${multiViewBatchFiles.length} 自动补全 (${round}/${MAX_RECOVERY_ROUNDS}): ${failedAngles
@@ -680,7 +703,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                 .join('、')}…`
             );
             for (const view of failedAngles) {
-              const idx = MULTIVIEW_ANGLES.findIndex((v) => v.key === view.key);
+              const idx = angles.findIndex((v) => v.key === view.key);
               try {
                 firstPass[idx] = await generateAngle(view);
               } catch (err) {
@@ -691,7 +714,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
           const ok = firstPass.filter(Boolean).length;
           overallSuccess += ok;
-          overallMissing += MULTIVIEW_ANGLES.length - ok;
+          overallMissing += angles.length - ok;
         }
 
         if (overallSuccess === 0) throw new Error('Batch processing failed completely.');
@@ -1283,7 +1306,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
       case AppTab.MULTIVIEW:
         const multiViewImages = images.filter(i => i.tab === AppTab.MULTIVIEW);
-        const latestMultiView = multiViewImages.slice(0, 4);
+        const latestMultiView = multiViewImages.slice(0, activeMultiViewAngles.length);
 
         return (
           <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1350,6 +1373,38 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                   ? '每张多视图将合成在白底 JuJuBit 模板正中央'
                   : '黑底模式：产品透明抠图后直接叠在黑底模板上（无白底方块）'}
               </p>
+            </div>
+
+            {/* Zoom detail — optional */}
+            <div className="flex flex-col items-center gap-3 max-w-md mx-auto w-full">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Zoom 细节图
+              </span>
+              <div className="w-full rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-900">同时生成 Zoom 细节</p>
+                    <p className="text-[11px] text-zinc-500">
+                      默认只出正面全身 / 俯视 / 侧面；开启后才加细节特写
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={multiViewIncludeZoom}
+                    onClick={() => toggleMultiViewIncludeZoom(!multiViewIncludeZoom)}
+                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                      multiViewIncludeZoom ? 'bg-indigo-600' : 'bg-zinc-200'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                        multiViewIncludeZoom ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* NEW badge overlay */}
@@ -1431,13 +1486,27 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                             Multi-View Generator
                         </h3>
                         <p className="text-zinc-500 text-sm mb-4">
-                            Upload your product photo, then generate consistent <strong>Front Full, Top, Side, and Zoom</strong> views. Uses Gemini image models and preserves the exact product from your reference.
+                            Upload your product photo, then generate consistent{' '}
+                            <strong>
+                              {multiViewIncludeZoom
+                                ? 'Front Full, Top, Side, and Zoom'
+                                : 'Front Full, Top, and Side'}
+                            </strong>{' '}
+                            views. Zoom 细节为可选项。
                         </p>
                         <div className="flex flex-wrap gap-2 text-xs text-slate-500">
                             <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">正面全身</span>
                             <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
                             <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
-                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Zoom Detail</span>
+                            {multiViewIncludeZoom ? (
+                              <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-200">
+                                Zoom Detail
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 bg-zinc-50 text-zinc-400 rounded border border-dashed border-zinc-200">
+                                Zoom 可选 · 已关
+                              </span>
+                            )}
                         </div>
                         </div>
                         <Button
@@ -1448,7 +1517,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                             className="w-full"
                         >
                             <Wand2 className="w-5 h-5 mr-2" />
-                            Generate 4 Views
+                            Generate {activeMultiViewAngles.length} Views
                         </Button>
                     </div>
                 </div>
@@ -1512,13 +1581,25 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                                 Batch Multi-View Processor
                            </h3>
                            <p className="text-zinc-500 text-sm mb-4">
-                               This will generate <strong>4 views</strong> (正面全身, Top, Side, Zoom) for <strong>every image</strong> in your queue.
+                               This will generate{' '}
+                               <strong>{activeMultiViewAngles.length} views</strong>{' '}
+                               ({activeMultiViewAngles.map((a) => a.labelZh).join(' / ')}) for{' '}
+                               <strong>every image</strong> in your queue.
+                               {!multiViewIncludeZoom ? ' Zoom 已关闭。' : ''}
                            </p>
                            <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-4">
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">正面全身</span>
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
                                 <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
-                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Zoom Detail</span>
+                                {multiViewIncludeZoom ? (
+                                  <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-200">
+                                    Zoom Detail
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-1 bg-zinc-50 text-zinc-400 rounded border border-dashed border-zinc-200">
+                                    Zoom 可选 · 已关
+                                  </span>
+                                )}
                            </div>
                         </div>
                         <Button
@@ -1529,7 +1610,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                             className="w-full"
                         >
                             <Wand2 className="w-5 h-5 mr-2" />
-                            Generate All Views
+                            Generate All Views ({activeMultiViewAngles.length}/产品)
                         </Button>
                     </div>
                 </div>
