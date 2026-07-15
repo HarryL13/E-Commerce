@@ -1,4 +1,4 @@
-// Changes: Multi-View Zoom is optional (default off); defaults to Front/Top/Side @ 1:1.
+// Changes: Compact Multi-View toolbar (mode/base/Zoom/NEW) — cut stacked option cards.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -1309,39 +1309,38 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
         const latestMultiView = multiViewImages.slice(0, activeMultiViewAngles.length);
 
         return (
-          <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* MultiView Mode Toggle */}
-            <div className="flex justify-center">
-                <div className="bg-white p-1.5 rounded-xl border border-zinc-200 flex gap-1 shadow-lg shadow-zinc-200/50">
-                    <button 
-                        onClick={() => setMultiViewMode('single')}
-                        className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                            multiViewMode === 'single' 
-                            ? 'bg-zinc-100 text-white shadow-sm ring-1 ring-zinc-200' 
-                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
-                        }`}
-                    >
-                        <Box className="w-4 h-4" /> Single Product
-                    </button>
-                    <button 
-                        onClick={() => setMultiViewMode('batch')}
-                        className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                            multiViewMode === 'batch' 
-                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' 
-                            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/50'
-                        }`}
-                    >
-                        <Images className="w-4 h-4" /> Batch Studio
-                    </button>
-                </div>
-            </div>
+          <div className="max-w-5xl mx-auto space-y-5 animate-in fade-in duration-300">
+            {/* Compact options bar — mode + base + Zoom + NEW */}
+            <div className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <div className="flex bg-zinc-100 p-0.5 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setMultiViewMode('single')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    multiViewMode === 'single'
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-500 hover:text-zinc-800'
+                  }`}
+                >
+                  Single
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMultiViewMode('batch')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    multiViewMode === 'batch'
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-500 hover:text-zinc-800'
+                  }`}
+                >
+                  Batch
+                </button>
+              </div>
 
-            {/* SKU base template — white / black */}
-            <div className="flex flex-col items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                SKU 底图
-              </span>
-              <div className="bg-white p-1 rounded-xl border border-zinc-200 flex gap-1 shadow-sm">
+              <div className="w-px h-5 bg-zinc-200 hidden sm:block" />
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">底图</span>
                 {(['white', 'black'] as const).map((variant) => {
                   const tpl = SKU_BASE_TEMPLATES[variant];
                   const active = multiViewSkuBase === variant;
@@ -1350,17 +1349,16 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                       key={variant}
                       type="button"
                       onClick={() => selectMultiViewSkuBase(variant)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      title={tpl.labelZh}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors ${
                         active
-                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-                          : 'text-zinc-600 hover:bg-zinc-50'
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
+                          : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
                       }`}
                     >
-                      <img
-                        src={tpl.url}
-                        alt={tpl.labelZh}
-                        className={`w-9 h-9 rounded-md object-cover border ${
-                          active ? 'border-white/40' : 'border-zinc-200'
+                      <span
+                        className={`w-3.5 h-3.5 rounded-sm border ${
+                          variant === 'white' ? 'bg-white border-zinc-300' : 'bg-zinc-900 border-zinc-700'
                         }`}
                       />
                       {tpl.labelZh}
@@ -1368,280 +1366,216 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
                   );
                 })}
               </div>
-              <p className="text-xs text-zinc-500">
-                {multiViewSkuBase === 'white'
-                  ? '每张多视图将合成在白底 JuJuBit 模板正中央'
-                  : '黑底模式：产品透明抠图后直接叠在黑底模板上（无白底方块）'}
-              </p>
-            </div>
 
-            {/* Zoom detail — optional */}
-            <div className="flex flex-col items-center gap-3 max-w-md mx-auto w-full">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Zoom 细节图
-              </span>
-              <div className="w-full rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-900">同时生成 Zoom 细节</p>
-                    <p className="text-[11px] text-zinc-500">
-                      默认只出正面全身 / 俯视 / 侧面；开启后才加细节特写
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={multiViewIncludeZoom}
-                    onClick={() => toggleMultiViewIncludeZoom(!multiViewIncludeZoom)}
-                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                      multiViewIncludeZoom ? 'bg-indigo-600' : 'bg-zinc-200'
+              <div className="w-px h-5 bg-zinc-200 hidden sm:block" />
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={multiViewIncludeZoom}
+                onClick={() => toggleMultiViewIncludeZoom(!multiViewIncludeZoom)}
+                className={`flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                  multiViewIncludeZoom
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
+                    : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50'
+                }`}
+              >
+                <span
+                  className={`relative w-7 h-4 rounded-full transition-colors ${
+                    multiViewIncludeZoom ? 'bg-indigo-600' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${
+                      multiViewIncludeZoom ? 'translate-x-3' : ''
                     }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                        multiViewIncludeZoom ? 'translate-x-5' : ''
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            </div>
+                  />
+                </span>
+                Zoom 细节
+              </button>
 
-            {/* NEW badge overlay */}
-            <div className="flex flex-col items-center gap-3 max-w-md mx-auto w-full">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                NEW 标签
-              </span>
-              <div className="w-full rounded-xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={NEW_TAG_ASSETS[newTagVariantForSkuBase(multiViewSkuBase)].url}
-                      alt="NEW preview"
-                      className="w-14 h-auto shrink-0 rounded-md bg-zinc-900 object-contain p-0.5"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-zinc-900">添加 NEW 标签</p>
-                      <p className="text-[11px] text-zinc-500 truncate">
-                        左下角 · 自动匹配{multiViewSkuBase === 'white' ? '黑' : '白'}字
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={multiViewNewTagEnabled}
-                    onClick={() => toggleMultiViewNewTag(!multiViewNewTagEnabled)}
-                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                      multiViewNewTagEnabled ? 'bg-indigo-600' : 'bg-zinc-200'
+              <button
+                type="button"
+                role="switch"
+                aria-checked={multiViewNewTagEnabled}
+                onClick={() => toggleMultiViewNewTag(!multiViewNewTagEnabled)}
+                className={`flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                  multiViewNewTagEnabled
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
+                    : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50'
+                }`}
+              >
+                <span
+                  className={`relative w-7 h-4 rounded-full transition-colors ${
+                    multiViewNewTagEnabled ? 'bg-indigo-600' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${
+                      multiViewNewTagEnabled ? 'translate-x-3' : ''
                     }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                        multiViewNewTagEnabled ? 'translate-x-5' : ''
-                      }`}
-                    />
-                  </button>
-                </div>
+                  />
+                </span>
+                NEW
+              </button>
 
-                {multiViewNewTagEnabled ? (
-                  <div className="space-y-2 pt-1 border-t border-zinc-100">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500">标签大小</span>
-                      <span className="font-medium text-indigo-700 tabular-nums">{multiViewNewTagScale}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={NEW_TAG_SCALE_MIN}
-                      max={NEW_TAG_SCALE_MAX}
-                      step={1}
-                      value={multiViewNewTagScale}
-                      onChange={(e) => setMultiViewNewTagScalePref(Number(e.target.value))}
-                      className="w-full h-2 accent-indigo-600 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] text-zinc-400">
-                      <span>小</span>
-                      <span>大</span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              {multiViewNewTagEnabled ? (
+                <div className="flex items-center gap-2 ml-auto min-w-[140px] max-w-[200px] flex-1">
+                  <span className="text-[10px] text-zinc-400 shrink-0">大小</span>
+                  <input
+                    type="range"
+                    min={NEW_TAG_SCALE_MIN}
+                    max={NEW_TAG_SCALE_MAX}
+                    step={1}
+                    value={multiViewNewTagScale}
+                    onChange={(e) => setMultiViewNewTagScalePref(Number(e.target.value))}
+                    className="w-full h-1.5 accent-indigo-600 cursor-pointer"
+                  />
+                  <span className="text-[10px] font-medium text-indigo-700 tabular-nums w-8 text-right">
+                    {multiViewNewTagScale}%
+                  </span>
+                </div>
+              ) : (
+                <p className="text-[11px] text-zinc-400 ml-auto hidden md:block">
+                  {activeMultiViewAngles.map((a) => a.labelZh).join(' · ')}
+                </p>
+              )}
             </div>
 
             {multiViewMode === 'single' ? (
-                // SINGLE MODE UI
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-1 h-[250px]">
-                        <UploadZone 
-                            currentImage={multiViewImage} 
-                            onImageUpload={setMultiViewImage} 
-                            onClear={() => setMultiViewImage(null)} 
-                            label="Product Reference (Required)"
-                        />
-                    </div>
-                    <div className="md:col-span-2 flex flex-col justify-end gap-4">
-                        <div className="bg-white p-6 rounded-2xl border border-zinc-200">
-                        <h3 className="text-lg font-medium text-zinc-900 mb-2 flex items-center gap-2">
-                            <Grid3X3 className="w-5 h-5 text-indigo-400" />
-                            Multi-View Generator
-                        </h3>
-                        <p className="text-zinc-500 text-sm mb-4">
-                            Upload your product photo, then generate consistent{' '}
-                            <strong>
-                              {multiViewIncludeZoom
-                                ? 'Front Full, Top, Side, and Zoom'
-                                : 'Front Full, Top, and Side'}
-                            </strong>{' '}
-                            views. Zoom 细节为可选项。
-                        </p>
-                        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">正面全身</span>
-                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
-                            <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
-                            {multiViewIncludeZoom ? (
-                              <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-200">
-                                Zoom Detail
-                              </span>
-                            ) : (
-                              <span className="px-2 py-1 bg-zinc-50 text-zinc-400 rounded border border-dashed border-zinc-200">
-                                Zoom 可选 · 已关
-                              </span>
-                            )}
-                        </div>
-                        </div>
-                        <Button
-                            onClick={handleMultiViewGenerate}
-                            disabled={!multiViewImage || isGenerating}
-                            isLoading={isGenerating}
-                            size="lg"
-                            className="w-full"
-                        >
-                            <Wand2 className="w-5 h-5 mr-2" />
-                            Generate {activeMultiViewAngles.length} Views
-                        </Button>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 items-stretch">
+                <div className="h-[220px]">
+                  <UploadZone
+                    currentImage={multiViewImage}
+                    onImageUpload={setMultiViewImage}
+                    onClear={() => setMultiViewImage(null)}
+                    label="产品图"
+                  />
                 </div>
+                <div className="flex flex-col justify-end gap-3">
+                  <p className="text-sm text-zinc-500">
+                    上传参考图后生成{' '}
+                    <span className="font-medium text-zinc-800">
+                      {activeMultiViewAngles.map((a) => a.labelZh).join('、')}
+                    </span>
+                    {multiViewIncludeZoom ? '' : '（可开 Zoom）'}
+                  </p>
+                  <Button
+                    onClick={handleMultiViewGenerate}
+                    disabled={!multiViewImage || isGenerating}
+                    isLoading={isGenerating}
+                    size="lg"
+                    className="w-full md:w-auto md:min-w-[240px]"
+                  >
+                    <Wand2 className="w-5 h-5 mr-2" />
+                    Generate {activeMultiViewAngles.length} Views
+                  </Button>
+                </div>
+              </div>
             ) : (
-                // BATCH MODE UI
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                    {/* Left: Queue */}
-                    <div className="lg:col-span-5 space-y-4">
-                        <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                             <Images className="w-4 h-4" /> Batch Queue
-                        </h3>
-                        <div className="bg-white border border-zinc-200 rounded-2xl p-6 h-[360px] flex flex-col">
-                            {multiViewBatchFiles.length === 0 ? (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-                                    <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center">
-                                        <Package className="w-8 h-8 text-slate-500" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-zinc-900 font-medium">No files queued</h4>
-                                        <p className="text-slate-500 text-sm mt-1 max-w-[200px] mx-auto">Upload multiple product images to generate views for all of them.</p>
-                                    </div>
-                                    <Button onClick={triggerMultiViewBatchUpload} variant="secondary">
-                                        <Upload className="w-4 h-4 mr-2" /> Upload Files
-                                    </Button>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col h-full">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <span className="text-sm font-medium text-zinc-700">{multiViewBatchFiles.length} files loaded</span>
-                                        <div className="flex gap-2">
-                                            <Button onClick={triggerMultiViewBatchUpload} variant="ghost" size="sm" className="h-8">
-                                                <Upload className="w-3 h-3 mr-2" /> Add
-                                            </Button>
-                                            <Button onClick={() => setMultiViewBatchFiles([])} variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-300">
-                                                Clear
-                                            </Button>
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto pr-2 space-y-2 scrollbar-thin scrollbar-thumb-slate-700">
-                                        {multiViewBatchFiles.map((file, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-2 bg-zinc-100 rounded-lg border border-zinc-200 group">
-                                                <img src={file.preview} className="w-10 h-10 rounded bg-black object-cover" />
-                                                <span className="text-sm text-zinc-700 truncate flex-1">{file.file.name}</span>
-                                                <button onClick={() => removeMultiViewBatchFile(idx)} className="text-slate-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                            <input type="file" multiple accept="image/*" className="hidden" ref={multiViewBatchInputRef} onChange={handleMultiViewBatchSelect} />
-                        </div>
-                    </div>
-
-                    {/* Right: Controls */}
-                    <div className="lg:col-span-7 space-y-4 flex flex-col justify-end h-full min-h-[360px]">
-                        <div className="bg-white p-6 rounded-2xl border border-zinc-200 mb-2">
-                           <h3 className="text-lg font-medium text-zinc-900 mb-2 flex items-center gap-2">
-                                <Layers className="w-5 h-5 text-indigo-400" />
-                                Batch Multi-View Processor
-                           </h3>
-                           <p className="text-zinc-500 text-sm mb-4">
-                               This will generate{' '}
-                               <strong>{activeMultiViewAngles.length} views</strong>{' '}
-                               ({activeMultiViewAngles.map((a) => a.labelZh).join(' / ')}) for{' '}
-                               <strong>every image</strong> in your queue.
-                               {!multiViewIncludeZoom ? ' Zoom 已关闭。' : ''}
-                           </p>
-                           <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-4">
-                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">正面全身</span>
-                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Top View</span>
-                                <span className="px-2 py-1 bg-zinc-100 rounded border border-zinc-200">Side Profile</span>
-                                {multiViewIncludeZoom ? (
-                                  <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-200">
-                                    Zoom Detail
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-1 bg-zinc-50 text-zinc-400 rounded border border-dashed border-zinc-200">
-                                    Zoom 可选 · 已关
-                                  </span>
-                                )}
-                           </div>
-                        </div>
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4 items-start">
+                <div className="rounded-xl border border-zinc-200 bg-white p-4 min-h-[260px] flex flex-col">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Queue · {multiViewBatchFiles.length}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button onClick={triggerMultiViewBatchUpload} variant="ghost" size="sm" className="h-7 text-xs">
+                        <Upload className="w-3 h-3 mr-1" /> Add
+                      </Button>
+                      {multiViewBatchFiles.length > 0 ? (
                         <Button
-                            onClick={handleBatchMultiViewGenerate}
-                            disabled={multiViewBatchFiles.length === 0 || isGenerating}
-                            isLoading={isGenerating}
-                            size="lg"
-                            className="w-full"
+                          onClick={() => setMultiViewBatchFiles([])}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-red-500"
                         >
-                            <Wand2 className="w-5 h-5 mr-2" />
-                            Generate All Views ({activeMultiViewAngles.length}/产品)
+                          Clear
                         </Button>
+                      ) : null}
                     </div>
+                  </div>
+                  {multiViewBatchFiles.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={triggerMultiViewBatchUpload}
+                      className="flex-1 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-300 text-zinc-500 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/40 transition-colors"
+                    >
+                      <Upload className="w-6 h-6" />
+                      <span className="text-sm">上传多张产品图</span>
+                    </button>
+                  ) : (
+                    <div className="flex-1 overflow-y-auto space-y-1.5 max-h-[280px] pr-1">
+                      {multiViewBatchFiles.map((file, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-2.5 p-1.5 rounded-lg bg-zinc-50 border border-zinc-100 group"
+                        >
+                          <img src={file.preview} className="w-9 h-9 rounded object-cover" alt="" />
+                          <span className="text-xs text-zinc-700 truncate flex-1">{file.file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeMultiViewBatchFile(idx)}
+                            className="text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="hidden"
+                    ref={multiViewBatchInputRef}
+                    onChange={handleMultiViewBatchSelect}
+                  />
                 </div>
+                <div className="flex flex-col gap-3 lg:pt-1">
+                  <p className="text-sm text-zinc-500">
+                    每张出{' '}
+                    <span className="font-medium text-zinc-800">{activeMultiViewAngles.length}</span> 视角
+                  </p>
+                  <Button
+                    onClick={handleBatchMultiViewGenerate}
+                    disabled={multiViewBatchFiles.length === 0 || isGenerating}
+                    isLoading={isGenerating}
+                    size="lg"
+                    className="w-full"
+                  >
+                    <Wand2 className="w-5 h-5 mr-2" />
+                    Generate All
+                  </Button>
+                </div>
+              </div>
             )}
 
-            {/* Latest Results (Only show in single mode or if images exist) */}
             {latestMultiView.length > 0 && (
-              <div className="space-y-4 pt-4 border-t border-zinc-200">
-                 <h4 className="text-sm font-medium text-zinc-500 uppercase tracking-wider pl-1">Latest Generation</h4>
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {latestMultiView.map((img) => (
-                      <div key={img.id} className="relative aspect-square bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl group">
-                          <img 
-                            src={img.url} 
-                            alt={img.prompt} 
-                            className="w-full h-full object-contain"
-                          />
-                          <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-white/10">
-                             {img.prompt.includes('Front') || img.prompt.includes('正面')
-                               ? '正面全身'
-                               : img.prompt.includes('Zoom')
-                                 ? 'Zoom View'
-                                 : img.prompt.includes('Side')
-                                   ? 'Side View'
-                                   : img.prompt.includes('Top')
-                                     ? 'Top View'
-                                     : 'View'}
-                          </div>
+              <div className="space-y-3 pt-3 border-t border-zinc-200">
+                <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Latest</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {latestMultiView.map((img) => (
+                    <div
+                      key={img.id}
+                      className="relative aspect-square bg-white rounded-xl overflow-hidden border border-zinc-200"
+                    >
+                      <img src={img.url} alt={img.prompt} className="w-full h-full object-contain" />
+                      <div className="absolute top-2 left-2 bg-black/55 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                        {img.prompt.includes('Front') || img.prompt.includes('正面')
+                          ? '正面全身'
+                          : img.prompt.includes('Zoom')
+                            ? 'Zoom'
+                            : img.prompt.includes('Side')
+                              ? 'Side'
+                              : img.prompt.includes('Top')
+                                ? 'Top'
+                                : 'View'}
                       </div>
-                    ))}
-                 </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
