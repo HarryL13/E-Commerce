@@ -47,10 +47,8 @@ import {
 } from './utils/skuBaseTemplates';
 import { compositeMultiViewOnSkuBase } from './utils/multiViewComposite';
 import {
-  NEW_TAG_ASSETS,
   NEW_TAG_SCALE_MAX,
   NEW_TAG_SCALE_MIN,
-  newTagVariantForSkuBase,
   readNewTagEnabled,
   readNewTagScale,
   writeNewTagEnabled,
