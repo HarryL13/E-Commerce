@@ -1,4 +1,4 @@
-// Changes: High-precision Multi-View composite — render at 2K so cutouts keep generation resolution.
+// Changes: Gentler cutout — don't erase white clothing; larger product slot; less aggressive flood-fill.
 import { SKU_BASE_TEMPLATES, SkuBaseVariant } from './skuBaseTemplates';
 import {
   NEW_TAG_ASSETS,
@@ -11,10 +11,11 @@ import {
 const COMPOSITE_OUTPUT_PX = 1024;
 
 /** Fraction of canvas used for the centered product slot (logo stays in corner). */
-const PRODUCT_SLOT_RATIO = 0.72;
+const PRODUCT_SLOT_RATIO = 0.84;
 
-/** Pixels within this color distance from detected studio background become transparent. */
-const BG_COLOR_TOLERANCE = 42;
+/** Tight match to sampled studio white — avoids eating white / cream product pixels. */
+const BG_COLOR_TOLERANCE_WHITE = 28;
+const BG_COLOR_TOLERANCE_BLACK = 36;
 
 /** Margin from canvas edge for NEW badge (fraction of width). */
 const NEW_TAG_MARGIN_RATIO = 0.04;
@@ -91,10 +92,12 @@ function isBackgroundCandidate(
   const chroma = Math.max(r, g, b) - Math.min(r, g, b);
 
   if (forBlackBase) {
-    return lum > 198 || dist < 58 || (lum > 175 && chroma < 28);
+    // Edge flood only: near-white / near-bg, NOT all bright product colors (skin, cream, white shirt).
+    return (lum > 230 && chroma < 18) || dist < BG_COLOR_TOLERANCE_BLACK;
   }
 
-  return dist < BG_COLOR_TOLERANCE || lum > 238;
+  // White base: only pixels very close to sampled studio white.
+  return dist < BG_COLOR_TOLERANCE_WHITE && lum > 220;
 }
 
 /** Flood-fill studio backdrop from image edges — keeps product interior intact. */
@@ -196,7 +199,7 @@ function trimTransparentBounds(
     return { data, w, h };
   }
 
-  const pad = 2;
+  const pad = Math.max(4, Math.round(Math.min(w, h) * 0.01));
   minX = Math.max(0, minX - pad);
   minY = Math.max(0, minY - pad);
   maxX = Math.min(w - 1, maxX + pad);
@@ -241,21 +244,24 @@ async function stripStudioBackground(
 
   floodFillBackground(data, w, h, bg, forBlackBase);
 
-  if (!forBlackBase) {
-    for (let i = 0; i < data.length; i += 4) {
-      const dist = colorDistance(data[i], data[i + 1], data[i + 2], bg.r, bg.g, bg.b);
-      const lum = luminance(data[i], data[i + 1], data[i + 2]);
-      if (dist < BG_COLOR_TOLERANCE || lum > 238) {
-        const alpha =
-          dist < BG_COLOR_TOLERANCE * 0.55 ? 0 : Math.min(1, (dist - BG_COLOR_TOLERANCE * 0.55) / 18);
-        data[i + 3] = Math.round(data[i + 3] * (1 - alpha));
-      }
-    }
+  // Soften only residual edge halo near pure white — never wipe all light product pixels.
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const dist = colorDistance(data[i], data[i + 1], data[i + 2], bg.r, bg.g, bg.b);
+    const lum = luminance(data[i], data[i + 1], data[i + 2]);
+    const chroma = Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]);
+    const nearBg =
+      forBlackBase
+        ? dist < BG_COLOR_TOLERANCE_BLACK * 0.65 && lum > 225 && chroma < 16
+        : dist < BG_COLOR_TOLERANCE_WHITE * 0.7 && lum > 232;
+    if (!nearBg) continue;
+    const t = Math.min(1, dist / (forBlackBase ? BG_COLOR_TOLERANCE_BLACK : BG_COLOR_TOLERANCE_WHITE));
+    data[i + 3] = Math.round(data[i + 3] * t);
   }
 
   despillWhiteFringe(data, forBlackBase);
 
-  const trimmed = forBlackBase ? trimTransparentBounds(data, w, h) : { data, w, h };
+  const trimmed = trimTransparentBounds(data, w, h);
 
   const outCanvas = document.createElement('canvas');
   outCanvas.width = trimmed.w;
