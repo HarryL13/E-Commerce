@@ -1,4 +1,4 @@
-// Changes: Compact Multi-View toolbar (mode/base/Zoom/NEW) — cut stacked option cards.
+// Changes: Logo Brand = local canvas overlay (position + size); no AI generate.
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptBar } from './components/PromptBar';
@@ -25,7 +25,7 @@ import {
   readMultiViewIncludeZoom,
   writeMultiViewIncludeZoom,
 } from './utils/multiViewPrompts';
-import { buildLogoPlacementPrompt, getLogoPositionLabel } from './utils/logoPlacement';
+import { compositeLogoOnProduct, getLogoPositionLabel } from './utils/logoPlacement';
 import {
   buildSceneBatchCustomPrompt,
   buildSceneCustomPrompt,
@@ -150,8 +150,6 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
   const [logoProductFiles, setLogoProductFiles] = useState<{ file: File; preview: string }[]>([]);
   const [logoPosition, setLogoPosition] = useState<LogoPosition>('top-right');
   const [logoSizePercent, setLogoSizePercent] = useState(15);
-  const [logoPrompt, setLogoPrompt] = useState('');
-  const [logoAspectRatio, setLogoAspectRatio] = useState<AspectRatio>('1:1');
 
   useEffect(() => {
     isGeneratingRef.current = isGenerating;
@@ -1008,31 +1006,27 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     setMultiViewBatchFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  // --- Logo Brand Tab Handlers ---
+  // --- Logo Brand: local canvas overlay (no AI) ---
   const generateLogoComposite = async (
     productPreview: string,
     fileLabel?: string
   ) => {
-    const prompt = buildLogoPlacementPrompt(logoPosition, logoSizePercent, logoPrompt);
-    const productRef = await prepRef(productPreview);
-    const logoRef = await prepRef(logoImage);
-    const generatedBase64 = await generateImageFromGemini(
-      prompt,
-      logoAspectRatio,
-      model,
-      undefined,
-      [productRef ?? productPreview, logoRef ?? logoImage!],
-      genOpts()
+    if (!logoImage) throw new Error('Missing logo');
+    const composited = await compositeLogoOnProduct(
+      productPreview,
+      logoImage,
+      logoPosition,
+      logoSizePercent
     );
 
     const newImage: GeneratedImage = {
       id: crypto.randomUUID(),
-      url: generatedBase64,
+      url: composited,
       prompt: fileLabel
         ? `Logo (${fileLabel}): ${getLogoPositionLabel(logoPosition)} ${logoSizePercent}%`
         : `Logo: ${getLogoPositionLabel(logoPosition)} ${logoSizePercent}%`,
       timestamp: Date.now(),
-      aspectRatio: logoAspectRatio,
+      aspectRatio: '1:1',
       model,
       tab: AppTab.LOGO,
     };
@@ -1043,12 +1037,12 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
 
   const handleLogoGenerate = async () => {
     if (!logoImage) {
-      setError('Please upload a brand logo first.');
+      setError('请先上传品牌 Logo');
       return;
     }
 
     if (logoProductFiles.length === 0) {
-      setError('Please upload at least one product image (up to 10).');
+      setError('请至少上传 1 张产品图（最多 10 张）');
       return;
     }
 
@@ -1056,16 +1050,9 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
     setIsGenerating(true);
 
     try {
-      const canProceed = await ensureApiKey(model);
-      if (!canProceed) {
-        setIsGenerating(false);
-        setProgressMessage(null);
-        return;
-      }
-
       const results = await runPool(
         logoProductFiles,
-        IMAGE_GEN_POOL_SIZE,
+        Math.min(4, logoProductFiles.length),
         async ({ preview, file }) => {
           try {
             await generateLogoComposite(preview, file.name);
@@ -1075,15 +1062,15 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
             return false;
           }
         },
-        (done, total) => setProgressMessage(`Logo batch ${done}/${total}…`)
+        (done, total) => setProgressMessage(`贴 Logo ${done}/${total}…`)
       );
 
       const successCount = results.filter(Boolean).length;
       if (successCount === 0) {
-        throw new Error('Logo placement failed for all images.');
+        throw new Error('Logo 贴图全部失败');
       }
     } catch (err: any) {
-      setError(err.message || 'Logo placement failed.');
+      setError(err.message || 'Logo 贴图失败');
     } finally {
       setIsGenerating(false);
       setProgressMessage(null);
@@ -1774,8 +1761,8 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           </div>
         );
 
-      case AppTab.LOGO:
-        const logoImages = images.filter(i => i.tab === AppTab.LOGO);
+      case AppTab.LOGO: {
+        const logoImages = images.filter((i) => i.tab === AppTab.LOGO);
         const logoPositions: { id: LogoPosition; label: string }[] = [
           { id: 'top-left', label: '左上' },
           { id: 'top-right', label: '右上' },
@@ -1783,185 +1770,143 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
           { id: 'bottom-left', label: '左下' },
           { id: 'bottom-right', label: '右下' },
         ];
-        const logoRatios: AspectRatio[] = ['1:1', '3:4', '4:3', '9:16', '16:9'];
 
         return (
-          <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              <div className="lg:col-span-5 space-y-4">
-                <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                  <Stamp className="w-4 h-4" /> Brand Logo
+          <div className="max-w-5xl mx-auto space-y-5 animate-in fade-in duration-300">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  品牌 Logo
                 </h3>
-                <div className="h-[200px]">
+                <div className="h-[180px]">
                   <UploadZone
                     currentImage={logoImage}
                     onImageUpload={setLogoImage}
                     onClear={() => setLogoImage(null)}
-                    label="Upload Brand Logo"
+                    label="上传 Logo（黑底会自动抠掉）"
                     compact
                   />
                 </div>
-
-                <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                  <Images className="w-4 h-4" /> Product Images (1–10)
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  产品图 · {logoProductFiles.length}/10
                 </h3>
                 <MultiUploadZone
                   items={logoProductFiles}
                   onItemsChange={setLogoProductFiles}
                   maxFiles={10}
-                  label="Upload Product Images"
-                  hint="Add 1 to 10 images. Drag & drop or click. The same logo applies to each."
+                  label="上传产品图"
+                  hint="1–10 张，同一 Logo 贴到每张"
                 />
-              </div>
-
-              <div className="lg:col-span-7 space-y-6">
-                <div className="bg-white p-6 rounded-2xl border border-zinc-200">
-                  <h3 className="text-lg font-medium text-zinc-900 mb-2 flex items-center gap-2">
-                    <Stamp className="w-5 h-5 text-indigo-400" />
-                    Logo Placement
-                  </h3>
-                  <p className="text-zinc-500 text-sm mb-6">
-                    Upload your brand logo and product image(s). Choose where the logo appears and its size.
-                  </p>
-
-                  <div className="mb-6">
-                    <label className="text-xs text-slate-500 mb-3 block uppercase tracking-wider font-semibold">
-                      Position
-                    </label>
-                    <div className="grid grid-cols-3 grid-rows-3 gap-2 max-w-[240px]">
-                      {logoPositions.map((pos) => {
-                        const isActive = logoPosition === pos.id;
-                        const gridClass =
-                          pos.id === 'top-left'
-                            ? 'col-start-1 row-start-1'
-                            : pos.id === 'top-right'
-                              ? 'col-start-3 row-start-1'
-                              : pos.id === 'center'
-                                ? 'col-start-2 row-start-2'
-                                : pos.id === 'bottom-left'
-                                  ? 'col-start-1 row-start-3'
-                                  : 'col-start-3 row-start-3';
-
-                        return (
-                          <button
-                            key={pos.id}
-                            onClick={() => setLogoPosition(pos.id)}
-                            className={`${gridClass} px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
-                              isActive
-                                ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20'
-                                : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:border-zinc-300 hover:text-zinc-900'
-                            }`}
-                          >
-                            {pos.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="mb-6">
-                    <label className="text-xs text-slate-500 mb-3 block uppercase tracking-wider font-semibold">
-                      Logo Size — {logoSizePercent}% of image width
-                    </label>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {[
-                        { label: '小', value: 8 },
-                        { label: '中', value: 15 },
-                        { label: '大', value: 25 },
-                      ].map((size) => (
-                        <button
-                          key={size.value}
-                          onClick={() => setLogoSizePercent(size.value)}
-                          className={`px-4 py-2 rounded-lg text-sm border transition-all ${
-                            logoSizePercent === size.value
-                              ? 'bg-indigo-600 border-indigo-500 text-white'
-                              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:border-zinc-400'
-                          }`}
-                        >
-                          {size.label} ({size.value}%)
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      type="range"
-                      min={5}
-                      max={40}
-                      step={1}
-                      value={logoSizePercent}
-                      onChange={(e) => setLogoSizePercent(Number(e.target.value))}
-                      className="w-full accent-indigo-500"
-                    />
-                  </div>
-
-                  <div className="mb-6">
-                    <label className="text-xs text-slate-500 mb-3 block uppercase tracking-wider font-semibold">
-                      Aspect Ratio
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {logoRatios.map((ratio) => (
-                        <button
-                          key={ratio}
-                          onClick={() => setLogoAspectRatio(ratio)}
-                          className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${
-                            logoAspectRatio === ratio
-                              ? 'bg-indigo-600 border-indigo-500 text-white'
-                              : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:border-zinc-400'
-                          }`}
-                        >
-                          {ratio}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-slate-500 mb-2 block uppercase tracking-wider font-semibold">
-                      Optional Prompt
-                    </label>
-                    <textarea
-                      value={logoPrompt}
-                      onChange={(e) => setLogoPrompt(e.target.value)}
-                      placeholder="e.g. Add soft shadow behind logo, keep minimal style..."
-                      className="w-full bg-white border border-zinc-200 rounded-xl px-4 py-3 text-sm text-zinc-900 placeholder-zinc-400 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 resize-none min-h-[80px]"
-                      disabled={isGenerating}
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleLogoGenerate}
-                  disabled={
-                    isGenerating ||
-                    !logoImage ||
-                    logoProductFiles.length === 0
-                  }
-                  isLoading={isGenerating}
-                  variant="primary"
-                  className="w-full h-14 text-base"
-                >
-                  {!isGenerating && <Wand2 className="w-5 h-5 mr-2" />}
-                  {logoProductFiles.length > 1
-                    ? `Generate ${logoProductFiles.length} Images with Logo`
-                    : 'Generate with Logo'}
-                </Button>
               </div>
             </div>
 
+            <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3 flex flex-wrap items-center gap-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 mb-1.5">
+                  位置
+                </p>
+                <div className="grid grid-cols-3 grid-rows-3 gap-1 w-[132px]">
+                  {logoPositions.map((pos) => {
+                    const isActive = logoPosition === pos.id;
+                    const gridClass =
+                      pos.id === 'top-left'
+                        ? 'col-start-1 row-start-1'
+                        : pos.id === 'top-right'
+                          ? 'col-start-3 row-start-1'
+                          : pos.id === 'center'
+                            ? 'col-start-2 row-start-2'
+                            : pos.id === 'bottom-left'
+                              ? 'col-start-1 row-start-3'
+                              : 'col-start-3 row-start-3';
+                    return (
+                      <button
+                        key={pos.id}
+                        type="button"
+                        onClick={() => setLogoPosition(pos.id)}
+                        className={`${gridClass} px-1.5 py-1.5 rounded-md border text-[10px] font-medium ${
+                          isActive
+                            ? 'bg-indigo-600 border-indigo-500 text-white'
+                            : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:border-zinc-300'
+                        }`}
+                      >
+                        {pos.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-[180px]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                    大小
+                  </p>
+                  <span className="text-xs font-medium text-indigo-700 tabular-nums">
+                    {logoSizePercent}%
+                  </span>
+                </div>
+                <div className="flex gap-1.5 mb-2">
+                  {[
+                    { label: '小', value: 8 },
+                    { label: '中', value: 15 },
+                    { label: '大', value: 25 },
+                  ].map((size) => (
+                    <button
+                      key={size.value}
+                      type="button"
+                      onClick={() => setLogoSizePercent(size.value)}
+                      className={`px-2.5 py-1 rounded-md text-xs border ${
+                        logoSizePercent === size.value
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+                      }`}
+                    >
+                      {size.label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={40}
+                  step={1}
+                  value={logoSizePercent}
+                  onChange={(e) => setLogoSizePercent(Number(e.target.value))}
+                  className="w-full h-1.5 accent-indigo-600"
+                />
+              </div>
+
+              <Button
+                onClick={handleLogoGenerate}
+                disabled={isGenerating || !logoImage || logoProductFiles.length === 0}
+                isLoading={isGenerating}
+                className="ml-auto h-11 px-5"
+              >
+                {!isGenerating && <Stamp className="w-4 h-4 mr-2" />}
+                {logoProductFiles.length > 1
+                  ? `贴 Logo ×${logoProductFiles.length}`
+                  : '贴 Logo'}
+              </Button>
+            </div>
+
+            <p className="text-xs text-zinc-400">
+              本地直接合成，不走 AI。上传产品图后选位置/大小即可。
+            </p>
+
             {logoImages.length > 0 && (
-              <div className="space-y-6 pt-8 border-t border-zinc-200">
-                <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider">
-                  Recent Logo Generations
+              <div className="space-y-3 pt-3 border-t border-zinc-200">
+                <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  结果
                 </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {logoImages.slice(0, 10).map((img) => (
                     <div
                       key={img.id}
-                      className="relative aspect-square bg-white rounded-xl overflow-hidden border border-zinc-200 shadow-lg group"
+                      className="relative aspect-square bg-white rounded-xl overflow-hidden border border-zinc-200"
                     >
                       <img src={img.url} alt={img.prompt} className="w-full h-full object-contain" />
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 translate-y-full group-hover:translate-y-0 transition-transform">
-                        <p className="text-white text-[10px] font-medium truncate">{img.prompt}</p>
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -1969,6 +1914,7 @@ const ImageStudioApp: React.FC<ImageStudioAppProps> = ({
             )}
           </div>
         );
+      }
 
       default:
         return null;
