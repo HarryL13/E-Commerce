@@ -1,4 +1,4 @@
-// Changes: Full E2E test — Gemini SKU listing (direct or proxy) + Shopify draft publish.
+// Changes: Default proxy host → api.cometapi.com; token from env/.dev.vars only.
 import fs from 'fs';
 import path from 'path';
 
@@ -7,8 +7,8 @@ const IMAGE_PATH =
   process.argv[2] ||
   '/Users/linyuxiao/Library/Application Support/Cursor/User/workspaceStorage/1776352706217/images/20260707151859-m0OzkY0L-192df686-17c1-44c4-acc5-6153a2f22308.png';
 const BASE = process.env.API_BASE || 'http://localhost:3000';
-const PROXY_URL = process.env.API_BASE_URL || 'https://lumina.tripo3d.com';
-const PROXY_TOKEN = process.env.API_AUTH_TOKEN || 'sk-ELK4mC5Kf8jkfkcZyk6DkA';
+const PROXY_URL = process.env.API_BASE_URL || 'https://api.cometapi.com';
+const PROXY_TOKEN = process.env.API_AUTH_TOKEN || '';
 
 function loadDevVars() {
   const raw = fs.readFileSync(path.join(ROOT, '.dev.vars'), 'utf8');

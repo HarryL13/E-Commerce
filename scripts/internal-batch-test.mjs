@@ -1,11 +1,11 @@
-// Changes: Internal batch test — 1 POD + 2 大货 SKUs from three studio images, publish drafts to Shopify.
+// Changes: Default proxy host → api.cometapi.com; token from env/.dev.vars only.
 import fs from 'fs';
 import path from 'path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BASE = process.env.API_BASE || 'http://localhost:3000';
-const PROXY_URL = process.env.API_BASE_URL || 'https://lumina.tripo3d.com';
-const PROXY_TOKEN = process.env.API_AUTH_TOKEN || 'sk-ELK4mC5Kf8jkfkcZyk6DkA';
+const PROXY_URL = process.env.API_BASE_URL || 'https://api.cometapi.com';
+const PROXY_TOKEN = process.env.API_AUTH_TOKEN || '';
 
 const TEST_CASES = [
   {

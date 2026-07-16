@@ -1,11 +1,11 @@
-// Changes: Test POD title format — pipe style, no FIG-POD in title; optional Shopify draft publish.
+// Changes: Default proxy host → api.cometapi.com; token from env/.dev.vars only.
 import fs from 'fs';
 import path from 'path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BASE = process.env.API_BASE || 'http://localhost:3000';
-const PROXY_URL = process.env.API_BASE_URL || 'https://lumina.tripo3d.com';
-const PROXY_TOKEN = process.env.API_AUTH_TOKEN || 'sk-ELK4mC5Kf8jkfkcZyk6DkA';
+const PROXY_URL = process.env.API_BASE_URL || 'https://api.cometapi.com';
+const PROXY_TOKEN = process.env.API_AUTH_TOKEN || '';
 const IMAGE_PATH =
   process.argv[2] ||
   '/Users/linyuxiao/Library/Application Support/Cursor/User/workspaceStorage/1776352706217/images/20260707142233-9GvTSHnY-ad546f14-04a5-4920-9c65-90cd2db83c95.png';
