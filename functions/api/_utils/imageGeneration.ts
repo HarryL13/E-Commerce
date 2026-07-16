@@ -1,5 +1,4 @@
-// Changes: Fast-fail Direct Gemini (8s) when proxy exists so CF 30s wall-time doesn't kill
-// requests before proxy fallback; map non-preview model ids to proxy-valid *-preview names.
+// Changes: On CometAPI, Gemini images use /v1beta generateContent (not /v1/images/generations).
 import { Env } from './auth';
 import {
   analyzeProductForImageGen,
@@ -134,10 +133,35 @@ async function generateViaProxyImagesWithDescription(
   if (!proxy.useProxy) {
     throw { message: 'Proxy is not configured (set API_BASE_URL + API_AUTH_TOKEN).' };
   }
-  return generateViaProxyImagesApi(proxy.baseUrl, proxy.token, {
+  const enriched: ImageGenRequest = {
     ...body,
     prompt: enrichPromptWithProduct(body.prompt, productDescription),
-  });
+  };
+  const referenceImages = collectReferenceImages(enriched);
+
+  // CometAPI: Gemini image models work via native generateContent only.
+  // Lumina-style gateways may still accept /v1/images/generations — try that as fallback.
+  if (GEMINI_IMAGE_MODELS.has(body.model) || GEMINI_IMAGE_MODELS.has(mapModelForProxy(body.model))) {
+    const errors: string[] = [];
+    try {
+      return await generateViaProxyGeminiNative(
+        proxy.baseUrl,
+        proxy.token,
+        enriched,
+        referenceImages
+      );
+    } catch (err: unknown) {
+      errors.push(formatUpstreamError('Proxy Gemini native', err).message);
+    }
+    try {
+      return await generateViaProxyImagesApi(proxy.baseUrl, proxy.token, enriched);
+    } catch (err: unknown) {
+      errors.push(formatUpstreamError('Proxy images', err).message);
+      throw { message: errors.join(' · ') };
+    }
+  }
+
+  return generateViaProxyImagesApi(proxy.baseUrl, proxy.token, enriched);
 }
 
 function mapAspectRatioToOpenAiSize(aspectRatio: string): string {

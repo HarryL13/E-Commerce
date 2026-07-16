@@ -1,4 +1,4 @@
-// Changes: Prefer proxy vision for product analyze — Direct Google hang was breaking gen fallback.
+// Changes: Default proxy text/vision models for CometAPI (old Lumina qwen ids not listed).
 import { Env } from './auth';
 import {
   DEFAULT_GEMINI_TEXT_MODEL,
@@ -16,11 +16,11 @@ export type DirectConfig = {
   useProxy: false;
 };
 
-/** Default text model on company LiteLLM gateway (SKU copy without image). */
-export const DEFAULT_PROXY_TEXT_MODEL = 'qwen3.6-flash';
+/** Default text model on company CometAPI gateway (SKU copy without image). */
+export const DEFAULT_PROXY_TEXT_MODEL = 'gemini-2.5-flash';
 
-/** Default vision model on company LiteLLM gateway (analyze image, SKU with photo). */
-export const DEFAULT_PROXY_VISION_MODEL = 'qwen3-vl-flash';
+/** Default vision model on company CometAPI gateway (analyze image, SKU with photo). */
+export const DEFAULT_PROXY_VISION_MODEL = 'gpt-4o-mini';
 
 export const PRODUCT_ANALYZE_PROMPT =
   'Identify the main product in this image for e-commerce photography. Output ONLY a short descriptor: product name plus key visual traits (material, color, finish, style). Examples: "matte black ceramic vase", "pink vinyl action figure", "brushed silver watch". No full sentences.';
