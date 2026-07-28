@@ -1,11 +1,18 @@
-// Changes: POD title = JuJuBit pipe format (Name | Tagline); FIG-POD only in variant SKUs, not title.
+// Changes: SKU copy prefers CometAPI proxy; falls back to GEMINI_DIRECT_API_KEY.
+//   Keeps POD/bulk JuJuBit title rules. Fixes prod error when Direct key unset.
 import { jsonResponse, requireAuth, methodNotAllowed, Env } from './_utils/auth';
 import {
   DEFAULT_GEMINI_TEXT_MODEL,
   geminiGenerateText,
   imageBase64ToPart,
-  requireDirectGeminiApiKey,
 } from './_utils/geminiDirect';
+import {
+  getProxyTextModel,
+  getProxyVisionModel,
+  proxyChatCompletion,
+  resolveDirectGeminiApiKey,
+  resolveProxyConfig,
+} from './_utils/upstream';
 
 type SkuLine = 'pod' | 'bulk';
 
@@ -78,6 +85,57 @@ function inferSkuLine(contextText: string): SkuLine | undefined {
   return undefined;
 }
 
+async function generateSkuCopy(
+  env: Env,
+  prompt: string,
+  imageBase64?: string | null
+): Promise<string> {
+  const proxy = resolveProxyConfig(env);
+  const directKey = resolveDirectGeminiApiKey(env);
+  const errors: string[] = [];
+
+  if (proxy.useProxy) {
+    try {
+      const proxyModel = imageBase64 ? getProxyVisionModel(env) : getProxyTextModel(env);
+      const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+      if (imageBase64) {
+        content.push({ type: 'image_url', image_url: { url: imageBase64 } });
+      }
+      content.push({ type: 'text', text: prompt });
+      return await proxyChatCompletion(env, proxyModel, content, {
+        maxTokens: 4096,
+        temperature: 0.7,
+      });
+    } catch (err: unknown) {
+      errors.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  if (directKey) {
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+    if (imageBase64) {
+      const imagePart = imageBase64ToPart(imageBase64);
+      if (!imagePart) {
+        throw new Error('Invalid image format.');
+      }
+      parts.push(imagePart);
+    }
+    parts.push({ text: prompt });
+    return geminiGenerateText(directKey, DEFAULT_GEMINI_TEXT_MODEL, parts, {
+      maxOutputTokens: 4096,
+      temperature: 0.7,
+      responseMimeType: 'application/json',
+    });
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join(' | '));
+  }
+  throw new Error(
+    'No SKU model configured. Set API_BASE_URL + API_AUTH_TOKEN (CometAPI), or GEMINI_DIRECT_API_KEY.'
+  );
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const denied = requireAuth(request, env);
   if (denied) return denied;
@@ -102,25 +160,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     : inferSkuLine(contextText);
 
   const prompt = buildPrompt(contextMode, contextText, skuLine);
-  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
-
-  if (imageBase64) {
-    const imagePart = imageBase64ToPart(imageBase64);
-    if (!imagePart) {
-      return jsonResponse({ error: 'Invalid image format.' }, 400);
-    }
-    parts.push(imagePart);
-  }
-  parts.push({ text: prompt });
 
   try {
-    const apiKey = requireDirectGeminiApiKey(env);
-    const textBlock = await geminiGenerateText(apiKey, DEFAULT_GEMINI_TEXT_MODEL, parts, {
-      maxOutputTokens: 4096,
-      temperature: 0.7,
-      responseMimeType: 'application/json',
-    });
-
+    const textBlock = await generateSkuCopy(env, prompt, imageBase64);
     try {
       return jsonResponse(parseModelJson(textBlock));
     } catch {

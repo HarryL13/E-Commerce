@@ -1,4 +1,5 @@
 // Changes:
+// - Surface real auth errors from verifyPassword (e.g. missing .dev.vars).
 // - Server-side password verification via POST /api/auth.
 // - Professional light login screen matching studio UI.
 import React, { useState, useEffect } from 'react';
@@ -29,9 +30,9 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
       return;
     }
     verifyPassword(saved)
-      .then((ok) => {
+      .then((result) => {
         if (cancelled) return;
-        if (ok) setUnlocked(true);
+        if (result.ok) setUnlocked(true);
         else clearSavedPassword();
       })
       .catch(() => {})
@@ -48,12 +49,12 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
     setSubmitting(true);
     setError(null);
     try {
-      const ok = await verifyPassword(input);
-      if (ok) {
-        saveSavedPassword(input);
+      const result = await verifyPassword(input);
+      if (result.ok) {
+        saveSavedPassword(input.trim());
         setUnlocked(true);
       } else {
-        setError('Incorrect password. Please try again.');
+        setError('error' in result ? result.error : 'Incorrect password. Please try again.');
       }
     } catch (err: any) {
       setError(err?.message || 'Could not reach the server. Try again.');

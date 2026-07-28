@@ -1,4 +1,5 @@
-// Changes: jsonResponse sends Cache-Control no-store so Shopify catalog isn't mid-cached.
+// Changes: Trim APP_PASSWORD / header values to avoid copy-paste newline mismatches.
+//   jsonResponse sends Cache-Control no-store so Shopify catalog isn't mid-cached.
 //   null (if authenticated) or a Response to immediately return from the
 //   caller. Usage pattern:
 //     const denied = requireAuth(request, env);
@@ -40,14 +41,14 @@ export function jsonResponse(body: unknown, status = 200, extraHeaders: Record<s
 }
 
 export function requireAuth(request: Request, env: Env): Response | null {
-  const expected = env.APP_PASSWORD;
+  const expected = env.APP_PASSWORD?.trim();
   if (!expected) {
     return jsonResponse(
       { error: 'Server misconfiguration: APP_PASSWORD is not set.' },
       500
     );
   }
-  const provided = request.headers.get(PASSWORD_HEADER);
+  const provided = request.headers.get(PASSWORD_HEADER)?.trim();
   if (!provided || provided !== expected) {
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }

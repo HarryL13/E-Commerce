@@ -1,4 +1,6 @@
 // Changes:
+// - Added localAuthApiPlugin so `npm run dev` can verify APP_PASSWORD via
+//   `.dev.vars` instead of always failing with a misleading "wrong password".
 // - Removed ANTHROPIC_API_KEY / GEMINI_API_KEY / API_KEY / APP_PASSWORD from
 //   Vite's `define`. These are now server-side-only env vars consumed by the
 //   /api serverless functions; injecting them into the browser bundle would
@@ -8,10 +10,11 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
+import {localAuthApiPlugin} from './scripts/localAuthApiPlugin';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), localAuthApiPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
