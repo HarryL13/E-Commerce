@@ -1,7 +1,7 @@
 // Changes: Shopify publish — default variant inventory qty 1000; SKU-linked image filenames.
 import { Env } from './auth';
 
-const API_VERSION = '2024-01';
+const API_VERSION = '2026-07';
 const DEFAULT_VARIANT_INVENTORY_QTY = 1000;
 
 export type ShopifyProductInput = {
