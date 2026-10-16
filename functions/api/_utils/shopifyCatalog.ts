@@ -1,7 +1,7 @@
 // Changes: Catalog list/search also matches handle + SKU; no stale-title-only lookups.
 import { Env } from './auth';
 
-const API_VERSION = '2024-01';
+const API_VERSION = '2026-07';
 
 export type ShopifyCatalogStatus = 'ACTIVE' | 'DRAFT' | 'ARCHIVED' | 'all';
 
